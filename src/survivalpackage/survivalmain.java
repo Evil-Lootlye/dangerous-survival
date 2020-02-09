@@ -17,17 +17,23 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Color;
 import org.bukkit.FireworkEffect;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Particle;
+import org.bukkit.Particle.DustOptions;
 import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
+import org.bukkit.block.Biome;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.Ageable;
 import org.bukkit.block.data.Bisected;
 import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.Directional;
+import org.bukkit.block.data.Openable;
+import org.bukkit.block.data.Waterlogged;
 import org.bukkit.block.data.Bisected.Half;
 import org.bukkit.boss.BarColor;
 import org.bukkit.boss.BarStyle;
@@ -44,6 +50,7 @@ import org.bukkit.entity.Arrow;
 import org.bukkit.entity.Blaze;
 import org.bukkit.entity.Creeper;
 import org.bukkit.entity.DragonFireball;
+import org.bukkit.entity.Drowned;
 import org.bukkit.entity.Egg;
 import org.bukkit.entity.EnderPearl;
 import org.bukkit.entity.Enderman;
@@ -88,11 +95,13 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockFromToEvent;
 import org.bukkit.event.block.BlockGrowEvent;
 import org.bukkit.event.block.BlockPistonExtendEvent;
 import org.bukkit.event.block.BlockPistonRetractEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityCombustEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
@@ -100,6 +109,7 @@ import org.bukkit.event.entity.EntityTargetEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.entity.PotionSplashEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
+import org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -109,12 +119,14 @@ import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.inventory.PrepareAnvilEvent;
 import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.entity.EntitySpawnEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerArmorStandManipulateEvent;
 import org.bukkit.event.player.PlayerBucketEmptyEvent;
+import org.bukkit.event.player.PlayerFishEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
@@ -123,6 +135,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.player.PlayerToggleSneakEvent;
 import org.bukkit.event.player.PlayerToggleSprintEvent;
+import org.bukkit.event.player.PlayerFishEvent.State;
 import org.bukkit.event.player.PlayerTeleportEvent.TeleportCause;
 import org.bukkit.inventory.EntityEquipment;
 import org.bukkit.inventory.Inventory;
@@ -161,6 +174,11 @@ import org.bukkit.util.EulerAngle;
 import org.bukkit.util.Vector;
 import org.spigotmc.event.entity.EntityMountEvent;
 
+import me.libraryaddict.disguise.DisguiseAPI;
+import me.libraryaddict.disguise.disguisetypes.EntityPose;
+import me.libraryaddict.disguise.disguisetypes.FlagWatcher;
+import me.libraryaddict.disguise.disguisetypes.PlayerDisguise;
+import me.libraryaddict.disguise.disguisetypes.watchers.PlayerWatcher;
 import net.md_5.bungee.api.ChatMessageType;
 import net.md_5.bungee.api.chat.TextComponent;
 
@@ -174,6 +192,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 	BukkitScheduler scheduler = null;
 	public ArrayList<String> worlds = new ArrayList<String>();
 	public HashMap<Player, Integer> thirst = new HashMap<Player, Integer>();
+	public HashMap<String, Integer> thirstN = new HashMap<String, Integer>();
 	public List<String> whitelist = new ArrayList<String>();
 	
 	public List<String> limbo = new ArrayList<String>();
@@ -264,6 +283,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 	public void onEnable() {
 		instance = this;
 		addnames();
+		boolean configed = false;
 		createConfigFol();
 		this.getServer().getPluginManager().registerEvents(this, this);
 		scheduler = getServer().getScheduler();
@@ -300,6 +320,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			if(thirstE == true) {
 			if(!thirst.containsKey(p)) {
 				thirst.put(p, 100);
+				thirstN.put(p.getName(), 100);
 			}
 			}
 			if(limboE == true) {
@@ -342,11 +363,17 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			}
 		}
 		
+		if(worlds.size() > 0) {
 		World w = Bukkit.getWorld(worlds.get(0));
+		if(w != null) {
 		larry = w.spawnEntity(w.getSpawnLocation(), EntityType.LLAMA).getUniqueId().toString();
+		if(Bukkit.getEntity(UUID.fromString(larry)) != null) {
 		Bukkit.getEntity(UUID.fromString(larry)).setInvulnerable(true);
 		((Llama) Bukkit.getEntity(UUID.fromString(larry))).setRemoveWhenFarAway(false);
 		addPotionEffectBetter(((Llama) Bukkit.getEntity(UUID.fromString(larry))), PotionEffectType.SLOW, 999999, 150, false, false, false);
+		}
+		}
+		}
 		bs = new blockSounds();
 		spawndistance = config.getInt("Spawn Radius ");
 		addToWhitelist();
@@ -368,6 +395,8 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 				}
 				if(artifactsE) {
 					artifactInsideEffect();
+					increaseWaterVelocity();
+					activateDoor();
 				}
 				effectLooperF();
 			}
@@ -393,6 +422,9 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 				if(potionE) {
 				addPotionEffectsArmor();
 				}
+				if(artifactsE) {
+					regenPlayers();
+				}
 				iterateRadio();
 			}
 		}, 0L, 20L);
@@ -417,15 +449,17 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 
 	@Override
 	public void onDisable() {
-		instance = null;
+		saveConfigs();
 		Entity e = Bukkit.getEntity(UUID.fromString(larry));
 		if(e != null) {
 			e.remove();
 		}
-		saveConfigs();
+		instance = null;
 	}
 	
 	public void createConfigFol() {
+		if(!config.isBoolean("Artifacts ")) {
+		console.sendMessage(ChatColor.YELLOW + "Creating Config Folder - Beep... Boop.. - Config Machine Done");
 		config.addDefault("Spawn Radius ", 100);
 		config.addDefault("Artifacts ", true);
 		config.addDefault("monsterViewDistance ", 64);
@@ -455,6 +489,8 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		config.addDefault("Potions In Anvils ", true);
 		config.addDefault("No Join Messages ", false);
 		config.addDefault("No Leave Messages", false);
+		config.addDefault("Enable Blood Check Explosions ", false);
+		config.addDefault("Force Hiding Nametags ", false);
 		config.addDefault("parkourP1", "none");
 		config.addDefault("parkourP2", "none");
 		config.addDefault("Parkour Divider ", 10);
@@ -495,6 +531,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		config.addDefault("Enabled Worlds - If Left Blank Will Just Use default world ", listitem2);
 		config.options().copyDefaults(true);
 		saveConfig();
+		}
 	}
 	
 	public void loadConfigs() {
@@ -1147,6 +1184,9 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		if(inSpawnRegion(p.getLocation())) {
 			return 0;
 		}
+		if(!notnpc(p)) {
+			return ammount;
+		}
 		double initialDamage = ammount;
 		if(!type.equals("deal")) {
 		double health = p.getHealth();
@@ -1199,51 +1239,90 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 	//Nametag Hiding
 	
 	public void doScoreboardThing() {
-		if(nametagE) {
 		ScoreboardManager manager = Bukkit.getScoreboardManager();
-		Scoreboard scoreboard = manager.getNewScoreboard();
-		hide = scoreboard;
-		 
-	    Team team = scoreboard.registerNewTeam("Hide");
-	    team.setOption(Option.NAME_TAG_VISIBILITY, OptionStatus.FOR_OWN_TEAM);
+		Scoreboard scoreboard = null;
+		if(Bukkit.getScoreboardManager().getMainScoreboard() == null) {
+			scoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
+		}
+		else {
+			scoreboard = Bukkit.getScoreboardManager().getMainScoreboard();
+			for(Objective o : scoreboard.getObjectives()) {
+				console.sendMessage("" + o.getName());
+			}
+		}
+		boolean hideFound = false;
+		for(Team t : scoreboard.getTeams()) {
+			if(t.getName().equals("Hide")) {
+				hideFound = true;
+			}
+		}
+		Team team = null;
+		Team team2 = null;
+		if(hideFound == false) {
+	    team = scoreboard.registerNewTeam("Hide");
+	    if(config.getBoolean("Force Hiding Nametags ")) {
+	    	team.setOption(Option.NAME_TAG_VISIBILITY, OptionStatus.NEVER);
+	    }
+	    else {
+	    	team.setOption(Option.NAME_TAG_VISIBILITY, OptionStatus.FOR_OWN_TEAM);
+	    }
 	    
-	    Team team2 = scoreboard.registerNewTeam("AHide");
+	    team2 = scoreboard.registerNewTeam("AHide");
 	    team2.setOption(Option.NAME_TAG_VISIBILITY, OptionStatus.NEVER);
-		 
+		}
+		else {
+			team = scoreboard.getTeam("Hide");
+			team2 = scoreboard.getTeam("AHide");
+		}
 		for(Player p : Bukkit.getOnlinePlayers()){
-			if(p.isOp()) {
-				if(worlds.contains(p.getWorld().getName()) || p.hasPermission("survivalmain.seenametags")) {
-					team2.addEntry(p.getName());
-				    p.setScoreboard(scoreboard);
-					}
+			if(worlds.contains(p.getWorld().getName())) {
+				 if(nametagE) {
+			if(p.isOp() || p.hasPermission("survivalmain.seenametags")) {
+				team2.addEntry(p.getName());
+				p.setScoreboard(scoreboard);
 			}
 			else {
-			if(worlds.contains(p.getWorld().getName())) {
 			team.addEntry(p.getName());
 		    p.setScoreboard(scoreboard);
 			}
+				 }
+				 else if(npcE) {
+					 team2.addEntry(p.getName().substring(0, p.getName().length()-1) + "~");
+					 p.setScoreboard(scoreboard);
+				 }
 			}
 		}
-		}
+		hide = scoreboard;
 	}
 	
 	@EventHandler
 	public void onPlayerJoin(PlayerJoinEvent e) {
 		if(worlds.contains(e.getPlayer().getWorld().getName())) {
-		if(nametagE) {
 		Scoreboard scoreboard = hide;
 		 
 		Player p = e.getPlayer();
+		if(nametagE) {
 		if(p.isOp() || p.hasPermission("survivalmain.seenametags")) {
 			hide.getTeam("AHide").addEntry(p.getName());
 			p.setScoreboard(scoreboard);
 		}
 		else {
-		hide.getTeam("Hide").addEntry(p.getName());
-		p.setScoreboard(scoreboard);
+			hide.getTeam("Hide").addEntry(p.getName());
+			p.setScoreboard(scoreboard);
 		}
 		}
+		else if(npcE) {
+			hide.getTeam("AHide").addEntry(p.getName().substring(0, p.getName().length()-1) + "~");
+			p.setScoreboard(scoreboard);
 		}
+		}
+	}
+	
+	public void hideEntity(LivingEntity p) {
+		Scoreboard scoreboard = hide;
+		 
+		hide.getTeam("AHide").addEntry(p.getName());
+		((Player) p).setScoreboard(scoreboard);
 	}
 	
 	///////////////////////////////////////////////////
@@ -1252,8 +1331,18 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 	
 	//Removing Messages
 	
+	public boolean isNotWorld(Entity e) {
+		if(worlds.contains(e.getWorld().getName())) {
+			return false;
+		}
+		return true;
+	}
+	
 	@EventHandler
     public void onPlayerDeath(PlayerDeathEvent e){
+		if(isNotWorld(e.getEntity())) {
+			return;
+		}
 		if(worlds.contains(e.getEntity().getWorld().getName())) {
 			if(inSpawnRegion(e.getEntity().getLocation())) {
 				return;
@@ -1273,12 +1362,12 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		ItemMeta itemmeta4 = m4.getItemMeta();
 		ItemMeta itemmeta5 = m5.getItemMeta();
 		ItemMeta itemmeta6 = m6.getItemMeta();
-		itemmeta.setDisplayName("Â§fHuman Meat");
-		itemmeta1.setDisplayName("Â§fHuman Meat");
-		itemmeta3.setDisplayName("Â§fBone Marrow");
-		itemmeta4.setDisplayName("Â§fBlood");
-		itemmeta5.setDisplayName("Â§fBone Fragment");
-		itemmeta6.setDisplayName("Â§fEyeball");
+		itemmeta.setDisplayName("§fHuman Meat");
+		itemmeta1.setDisplayName("§fHuman Meat");
+		itemmeta3.setDisplayName("§fBone Marrow");
+		itemmeta4.setDisplayName("§fBlood");
+		itemmeta5.setDisplayName("§fBone Fragment");
+		itemmeta6.setDisplayName("§fEyeball");
 		m.setAmount(randor.nextInt(3)+1);
 		m1.setAmount(randor.nextInt(3)+1);
 		m2.setAmount(randor.nextInt(3)+1);
@@ -1318,13 +1407,16 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 	
 	@EventHandler
 	public void onPlayerDamageFromEntity(EntityDamageByEntityEvent e) {
+		if(isNotWorld(e.getEntity())) {
+			return;
+		}
 		if(worlds.contains(e.getEntity().getWorld().getName())) {
 			if(inSpawnRegion(e.getEntity().getLocation()) || e.isCancelled()) {
 				return;
 			}
 			if(bloodE) {
-		if(e.getEntity() instanceof Player) {
-			if(e.getDamager().hasMetadata("player")) {
+		if(notnpc(e.getEntity())) {
+			if(e.getDamager().hasMetadata("player") || e.getEntity().isInvulnerable() || e.isCancelled()) {
 				return;
 			}
 			Player p = (Player) e.getEntity();
@@ -1341,11 +1433,13 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 				for(int space = 0; space < 25; space++) {
 					p.getWorld().spawnParticle(Particle.BLOCK_CRACK, p.getLocation().getX()+(coinFlip()*(randor.nextInt(300)/1000.0)), (p.getLocation().getY() + 1)+(coinFlip()*(randor.nextInt(1000)/1000.0)), p.getLocation().getZ()+(coinFlip()*(randor.nextInt(300)/1000.0)), 1, Material.NETHER_WART_BLOCK.createBlockData());
 				}
+				if(bloodDropsE) {
 			if(isNotSolid(p.getLocation().getBlock().getLocation(), true)&&(!(isNotSolid(p.getLocation().getBlock().getLocation().subtract(0, 1, 0), false)))) {
 				Block b = p.getLocation().getBlock();
 				b.setType(Material.REDSTONE_WIRE);
 				b.setMetadata("blood", new FixedMetadataValue(this, 0));
 			}
+				}
 			}
 		}
 			}
@@ -1396,6 +1490,56 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			doBloodDestroyParticles(b2.getLocation());
 			}
 		}
+		}
+	}
+	
+	@EventHandler
+	public void entityExplodeBlood(EntityExplodeEvent e) {
+		if(bloodE) {
+			if(config.getBoolean("Enable Blood Check Explosions ")) {
+				for(Block b : e.blockList()) {
+					Block b2 = b.getRelative(BlockFace.UP);
+					if(b.hasMetadata("blood")) {
+						b.removeMetadata("blood", this);
+						if(b.getType() == Material.REDSTONE_WIRE) {
+						b.setType(Material.AIR);
+						doBloodDestroyParticles(b.getLocation());
+						}
+					}
+					else if(b2.hasMetadata("blood")) {
+						b2.removeMetadata("blood", this);
+						if(b2.getType() == Material.REDSTONE_WIRE) {
+						b2.setType(Material.AIR);
+						doBloodDestroyParticles(b2.getLocation());
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	@EventHandler
+	public void entityExplodeBlood2(BlockExplodeEvent e) {
+		if(bloodE) {
+			if(config.getBoolean("Enable Blood Check Explosions ")) {
+				for(Block b : e.blockList()) {
+					Block b2 = b.getRelative(BlockFace.UP);
+					if(b.hasMetadata("blood")) {
+						b.removeMetadata("blood", this);
+						if(b.getType() == Material.REDSTONE_WIRE) {
+						b.setType(Material.AIR);
+						doBloodDestroyParticles(b.getLocation());
+						}
+					}
+					else if(b2.hasMetadata("blood")) {
+						b2.removeMetadata("blood", this);
+						if(b2.getType() == Material.REDSTONE_WIRE) {
+						b2.setType(Material.AIR);
+						doBloodDestroyParticles(b2.getLocation());
+						}
+					}
+				}
+			}
 		}
 	}
 	
@@ -1559,8 +1703,24 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		return dot > 0.70D;
 	}
 	
+	public boolean exists(Entity e) {
+		if(e == null) {
+			return false;
+		}
+		if(e.isDead()) {
+			return false;
+		}
+		return true;
+	}
+	
 	@EventHandler
 	public void onTargeted(EntityTargetEvent e) {
+		if(!exists(e.getTarget())) {
+			return;
+		}
+		if(isNotWorld(e.getEntity())) {
+			return;
+		}
 		if(worlds.contains(e.getEntity().getWorld().getName())) {
 			if(inSpawnRegion(e.getEntity().getLocation())) {
 				return;
@@ -1581,7 +1741,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 	}
 	
 	public boolean isFound(Entity monster, Entity player) {
-		if(limbo.contains(((Player) player).getName()) || monster.hasMetadata("player")) {
+		if(limbo.contains(((Player) player).getName()) || monster.hasMetadata("player") || monster.hasMetadata("darkness")) {
 			return false;
 		}
 		if(((LivingEntity) monster).hasPotionEffect(PotionEffectType.BLINDNESS)) {
@@ -1913,6 +2073,32 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 	
 	//Thirst
 	
+	@EventHandler
+	public void onPlayerQuitThirst(PlayerQuitEvent e) {
+		if(thirstE) {
+			Player p = e.getPlayer();
+			if(exists(p)) {
+				if(thirst.containsKey(p)) {
+				int thirstA = thirst.get(p);
+				thirstN.put(p.getName(), thirstA);
+				}
+			}
+		}
+	}
+	
+	@EventHandler
+	public void onPlayerJoinThirst(PlayerJoinEvent e) {
+		if(thirstE) {
+			Player p = e.getPlayer();
+			if(exists(p)) {
+				if(thirstN.containsKey(p.getName())) {
+				int thirstA = thirstN.get(p.getName());
+				thirst.put(p, thirstA);
+				}
+			}
+		}
+	}
+	
 	public void sendThirstMessage(int thirstA, Player p, boolean adding) {
 		if(thirstA <= 0) {
 			thirstA = 0;
@@ -1929,7 +2115,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 	public void decreaseThirst() {
 		HashMap<Player, Integer> players = new HashMap<Player, Integer>(thirst);
 		for(Player p : players.keySet()) {
-			if(inSpawnRegion(p.getLocation())) {
+			if((!worlds.contains(p.getWorld().getName())) ||inSpawnRegion(p.getLocation()) || (p.getGameMode()==GameMode.CREATIVE||p.getGameMode()==GameMode.SPECTATOR)) {
 				
 			}
 			else if(limbo.contains(p.getName())) {
@@ -1939,6 +2125,9 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			if(p != null) {
 				if(p.isOnline()) {
 					int thirstA = players.get(p);
+					if(p.getLocation().getBlock().getBiome() == Biome.NETHER) {
+						thirstA -= 2;
+					}
 					thirstA -= 1;
 					sendThirstMessage(thirstA, p, false);
 				}
@@ -1951,7 +2140,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		HashMap<Player, Integer> players = new HashMap<Player, Integer>(thirst);
 		for(Player p : players.keySet()) {
 			if(worlds.contains(p.getWorld().getName())) {
-			if(inSpawnRegion(p.getLocation())) {
+			if(inSpawnRegion(p.getLocation()) || (p.getGameMode()==GameMode.CREATIVE||p.getGameMode()==GameMode.SPECTATOR)) {
 
 			}
 			else if(limbo.contains(p.getName())) {
@@ -1983,6 +2172,10 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 	public void heartBeatSound() {
 		HashMap<Player, Integer> players = new HashMap<Player, Integer>(thirst);
 		for(Player p : players.keySet()) {
+			if((p.getGameMode()==GameMode.CREATIVE||p.getGameMode()==GameMode.SPECTATOR)) {
+				
+			}
+		else {
 			if(worlds.contains(p.getWorld().getName())) {
 			if(p != null) {
 				if(p.isOnline()) {
@@ -2006,6 +2199,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 				}
 			}
 			}
+		}
 		}
 	}
 	
@@ -2123,7 +2317,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 	@EventHandler
 	public void onSetOnFire(EntityCombustEvent e) {
 		if(worlds.contains(e.getEntity().getWorld().getName()) && fireE) {
-		if(e.getEntity() instanceof LivingEntity) {
+		if(e.getEntity() instanceof LivingEntity && (!(e.getEntity().hasMetadata("player")))) {
 			if(e.getEntity() instanceof Zombie || e.getEntity() instanceof Skeleton) {
 				if(!isNight(e.getEntity().getWorld())) {
 					if(e.getEntity().getLocation().getBlock().getLightFromSky()>0) {
@@ -2197,13 +2391,28 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 	}
 	
 	///////////////////////////////////////////////////
+	boolean nau = false;
+	
+	@EventHandler
+	public void onPetSpawn(CreatureSpawnEvent e) {
+		if(nau) {
+		if(!e.isCancelled()) {
+		if(e.getSpawnReason() == SpawnReason.NATURAL) {
+			e.getEntity().setMetadata("natural", new FixedMetadataValue(this, 0));
+		}
+		}
+		}
+	}
 	
 	//Mob Effects (Blood and Better Drops)
 	
 	@EventHandler
 	public void onMobDamageFromEntity(EntityDamageByEntityEvent e) {
+		if(isNotWorld(e.getEntity())) {
+			return;
+		}
 		if(worlds.contains(e.getEntity().getWorld().getName()) && bloodE) {
-			if(inSpawnRegion(e.getEntity().getLocation()) || e.isCancelled()) {
+			if(inSpawnRegion(e.getEntity().getLocation()) || e.isCancelled() || e.getEntity().isInvulnerable() || e.getEntity().hasMetadata("darkness")) {
 				return;
 			}
 		if(e.getEntity() instanceof LivingEntity && (!(e.getEntity() instanceof Player || e.getEntity() instanceof Silverfish || e.getEntity() instanceof ArmorStand))) {
@@ -2218,12 +2427,14 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 				double width = (bb.getWidthX() + bb.getWidthZ()) / 2.0;
 				BlockData bd = getBlood(le);
 				le.getWorld().spawnParticle(Particle.BLOCK_CRACK, le.getLocation().add(0, heightAdd, 0), 25, width/3.0, heightAdd/2.0, width/3.0, 0.005, bd);
+				if(bloodDropsE) {
 			if(isNotSolid(le.getLocation().getBlock().getLocation(), true)&&(!(isNotSolid(le.getLocation().getBlock().getLocation().subtract(0, 1, 0), false)))) {
 					if(bd.getMaterial() == Material.NETHER_WART_BLOCK) {
 					Block b = le.getLocation().getBlock();
 					b.setType(Material.REDSTONE_WIRE);
 					b.setMetadata("blood", new FixedMetadataValue(this, 0));
 					}
+				}
 				}
 			}
 		}
@@ -2258,6 +2469,9 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 
 	@EventHandler
 	public void onEntityDeath(EntityDeathEvent e) {
+		if(isNotWorld(e.getEntity())) {
+			return;
+		}
 		if(worlds.contains(e.getEntity().getWorld().getName()) && dropsE) {
 			if(inSpawnRegion(e.getEntity().getLocation())) {
 				return;
@@ -2282,8 +2496,11 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 	
 	@EventHandler
 	public void onMobDamageFromPlayer(EntityDamageByEntityEvent e) {
+		if(isNotWorld(e.getEntity()) || (nau && (!e.getEntity().hasMetadata("natural")))) {
+			return;
+		}
 		if(worlds.contains(e.getEntity().getWorld().getName()) && dropsE) {
-		if(inSpawnRegion(e.getEntity().getLocation()) || e.isCancelled()) {
+		if(inSpawnRegion(e.getEntity().getLocation()) || e.isCancelled() || e.getEntity().isInvulnerable() || e.getEntity().hasMetadata("darkness")) {
 			return;
 		}
 		if(e.getEntity() instanceof LivingEntity && e.getDamager() instanceof LivingEntity && (!(e.getEntity() instanceof Player))) {
@@ -2309,7 +2526,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			int choice = randor.nextInt(chance);
 					
 			if(choice==0) {
-				if(mob.hasMetadata("player") || mob instanceof IronGolem || mob instanceof WitherSkeleton || mob instanceof Evoker || mob instanceof Slime || mob instanceof MagmaCube || mob.getType().name().toLowerCase().contains("ravag") || mob instanceof Shulker || mob instanceof Stray) {
+				if(mob.hasMetadata("player") || mob instanceof IronGolem || mob instanceof Drowned || mob instanceof WitherSkeleton || mob instanceof Evoker || mob instanceof Slime || mob instanceof MagmaCube || mob.getType().name().toLowerCase().contains("ravag") || mob instanceof Shulker || mob instanceof Stray) {
 					return;
 				}
 				else if(mob instanceof Blaze) {
@@ -2345,8 +2562,11 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 	
 	@EventHandler
 	public void onMobDamage(EntityDamageEvent e) {
+		if(isNotWorld(e.getEntity()) || (nau && (!e.getEntity().hasMetadata("natural")))) {
+			return;
+		}
 		if(worlds.contains(e.getEntity().getWorld().getName()) && dropsE) {
-			if(inSpawnRegion(e.getEntity().getLocation()) || e.isCancelled()) {
+			if(inSpawnRegion(e.getEntity().getLocation()) || e.isCancelled() || e.getEntity().isInvulnerable() || e.getEntity().hasMetadata("darkness")) {
 				return;
 			}
 		if(e.getEntity() instanceof LivingEntity && (!(e.getEntity() instanceof Player))) {
@@ -2363,7 +2583,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 				int choice = randor.nextInt(chance);
 						
 				if(choice==0) {
-					if(mob.hasMetadata("player") || mob instanceof IronGolem || mob instanceof WitherSkeleton || mob instanceof Evoker || mob instanceof Slime || mob instanceof MagmaCube || mob.getType().name().toLowerCase().contains("ravag") || mob instanceof Shulker || mob instanceof Stray) {
+					if(mob.hasMetadata("player") || mob instanceof IronGolem || mob instanceof Drowned || mob instanceof WitherSkeleton || mob instanceof Evoker || mob instanceof Slime || mob instanceof MagmaCube || mob.getType().name().toLowerCase().contains("ravag") || mob instanceof Shulker || mob instanceof Stray) {
 						return;
 					}
 					else if(mob instanceof Blaze) {
@@ -2403,6 +2623,12 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 	
 	public void targeted(LivingEntity monster, LivingEntity player) {
 		//add speed
+		if(isNotWorld(monster)) {
+			return;
+		}
+		if(monster.hasMetadata("cavem") || monster.hasMetadata("darkness")) {
+			return;
+		}
 		if(monstersE) {
 		if(monster instanceof Zombie) {
 			addPotionEffectBetter(monster, PotionEffectType.SPEED, 999999, 0, false, false, false);
@@ -2448,14 +2674,18 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		for(Entity e : entitiesAround) {
 			if(e instanceof Monster) {
 				Monster m = (Monster) e;
-				if(m != monster) {
-					if(m.getTarget() != null) {
-						if(m.getTarget().isDead()) {
-							m.setTarget(target);
+				if((!(m instanceof Enderman)) || (monster instanceof Enderman && m instanceof Enderman)) {
+					if(m != monster) {
+						if(!m.hasMetadata("cavem")) {
+							if(m.getTarget() != null) {
+								if(m.getTarget().isDead()) {
+									m.setTarget(target);
+								}
+							}
+							else {
+								m.setTarget(target);
+							}
 						}
-					}
-					else {
-						m.setTarget(target);
 					}
 				}
 			}
@@ -2464,6 +2694,9 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 	
 	@EventHandler
 	public void wasHit(EntityDamageByEntityEvent event) {
+		if(isNotWorld(event.getEntity())) {
+			return;
+		}
 		if(worlds.contains(event.getEntity().getWorld().getName()) && monstersE) {
 		if(event.getEntity() instanceof Player) {
 		Player damaged = (Player) event.getEntity();
@@ -2647,8 +2880,13 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 	
 	@EventHandler
 	public void playerDamage(EntityDamageEvent e) {
-		if(inSpawnRegion(e.getEntity().getLocation())) {
+		if(isNotWorld(e.getEntity())) {
+			return;
+		}
+		if(e.getEntity().isInvulnerable() || inSpawnRegion(e.getEntity().getLocation())) {
+			if(e.getEntity().isInvulnerable() || e.getEntity() instanceof Player) {
 			e.setCancelled(true);
+			}
 			return;
 		}
 		if(worlds.contains(e.getEntity().getWorld().getName()) && fallE) {
@@ -2693,12 +2931,14 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 					double width = (bb.getWidthX() + bb.getWidthZ()) / 2.0;
 					BlockData bd = getBlood(le);
 					le.getWorld().spawnParticle(Particle.BLOCK_CRACK, le.getLocation().add(0, heightAdd, 0), 25, width/3.0, heightAdd/2.0, width/3.0, 0.005, bd);
+					if(bloodDropsE) {
 				if(isNotSolid(le.getLocation().getBlock().getLocation(), true)&&(!(isNotSolid(le.getLocation().getBlock().getLocation().subtract(0, 1, 0), false)))) {
 						if(bd.getMaterial() == Material.NETHER_WART_BLOCK) {
 						Block b = le.getLocation().getBlock();
 						b.setType(Material.REDSTONE_WIRE);
 						b.setMetadata("blood", new FixedMetadataValue(this, 0));
 					}
+				}
 				}
 				}
 				if(e.getFinalDamage() >= 7) {
@@ -3026,14 +3266,14 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		// if silk touch, return
 		Player p = e.getPlayer();
 		if(worlds.contains(p.getWorld().getName()) && stageE) {
-			if(limboE) {
-		if(limbo.contains(p.getName())) {
-			return;
-		}
-			}
-			if(inSpawnRegion(p.getLocation())|| e.isCancelled()) {
+		if(limboE) {
+			if(limbo.contains(p.getName())) {
 				return;
 			}
+		}
+		if(inSpawnRegion(p.getLocation()) || e.isCancelled()) {
+			return;
+		}
 		if(p.getInventory().getItemInMainHand()!=null) {
 			if(p.getInventory().getItemInMainHand().containsEnchantment(Enchantment.SILK_TOUCH)) {
 				return;
@@ -3200,49 +3440,49 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 				}
 			}
 				if(m.name().toLowerCase().contains("black")) {
-					im.setDisplayName("Â§0"+rename);
+					im.setDisplayName("§0"+rename);
 				}
 				else if(m.name().toLowerCase().contains("red")) {
-					im.setDisplayName("Â§4"+rename);
+					im.setDisplayName("§4"+rename);
 				}
 				else if(m.name().toLowerCase().contains("green")) {
-					im.setDisplayName("Â§2"+rename);
+					im.setDisplayName("§2"+rename);
 				}
 				else if(m.name().toLowerCase().contains("light_blue")) {
-					im.setDisplayName("Â§b"+rename);
+					im.setDisplayName("§b"+rename);
 				}
 				else if(m.name().toLowerCase().contains("purple")) {
-					im.setDisplayName("Â§5"+rename);
+					im.setDisplayName("§5"+rename);
 				}
 				else if(m.name().toLowerCase().contains("cyan")) {
-					im.setDisplayName("Â§3"+rename);
+					im.setDisplayName("§3"+rename);
 				}
 				else if(m.name().toLowerCase().contains("light_gray")) {
-					im.setDisplayName("Â§7"+rename);
+					im.setDisplayName("§7"+rename);
 				}
 				else if(m.name().toLowerCase().contains("gray")) {
-					im.setDisplayName("Â§8"+rename);
+					im.setDisplayName("§8"+rename);
 				}
 				else if(m.name().toLowerCase().contains("pink")) {
-					im.setDisplayName("Â§c"+rename);
+					im.setDisplayName("§c"+rename);
 				}
 				else if(m.name().toLowerCase().contains("lime")) {
-					im.setDisplayName("Â§a"+rename);
+					im.setDisplayName("§a"+rename);
 				}
 				else if(m.name().toLowerCase().contains("yellow")) {
-					im.setDisplayName("Â§e"+rename);
+					im.setDisplayName("§e"+rename);
 				}
 				else if(m.name().toLowerCase().contains("blue")) {
-					im.setDisplayName("Â§1"+rename);
+					im.setDisplayName("§1"+rename);
 				}
 				else if(m.name().toLowerCase().contains("magenta")) {
-					im.setDisplayName("Â§d"+rename);
+					im.setDisplayName("§d"+rename);
 				}
 				else if(m.name().toLowerCase().contains("orange")) {
-					im.setDisplayName("Â§6"+rename);
+					im.setDisplayName("§6"+rename);
 				}
 				else if(m.name().toLowerCase().contains("white")) {
-					im.setDisplayName("Â§f"+rename);
+					im.setDisplayName("§f"+rename);
 				}
 			newItem.setItemMeta(im);
 			//event.getInventory().setRepairCost(10);
@@ -3806,6 +4046,9 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
     //Player NPCs
     
     public boolean inSpawnRegion(Location l) {
+    	if(spawndistance < 2) {
+    		return false;
+    	}
     	Location spawn = l.getWorld().getSpawnLocation();
     	if(worlds.contains(l.getWorld().getName())) {
     	if((spawn.getX()+spawndistance>l.getX())&&(spawn.getX()-spawndistance<l.getX())) {
@@ -3887,6 +4130,9 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
     
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent e) {
+    	if(isNotWorld(e.getPlayer())) {
+			return;
+		}
     	if(worlds.contains(e.getPlayer().getWorld().getName()) && npcE) {
     	if(limboE) {
     	if(limbo.contains(e.getPlayer().getName())) {
@@ -3925,6 +4171,15 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
     	for(PotionEffect pt : p.getActivePotionEffects()) {
     		playerFake.addPotionEffect(pt);
     	}
+    	PlayerDisguise disguise = null;
+    	if(nametagE) {
+    		disguise = new PlayerDisguise(p.getName());
+    	}
+    	else if(npcE) {
+    		disguise = new PlayerDisguise((p.getName().substring(0, p.getName().length()-1) + "~"));
+    		disguise.getWatcher().setSkin(p.getName() + "");
+    	}
+        DisguiseAPI.disguiseEntity(playerFake, disguise);
     	String UUID = playerFake.getUniqueId().toString();
     	addFake(p.getName(), UUID);
     	}
@@ -4012,7 +4267,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
     
     @EventHandler
 	public void playerShootBow(EntityShootBowEvent e) {
-    	if(worlds.contains(e.getEntity().getWorld().getName()) && potionE) {
+    	if(potionE) {
 		if(e.getEntity() instanceof Player) {
 			Player p = (Player) e.getEntity();
 			Projectile a = (Projectile) e.getProjectile();
@@ -4037,7 +4292,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
     
     @EventHandler
     public void onPlayerHitWithPotion(EntityDamageByEntityEvent e) {
-    	if(worlds.contains(e.getEntity().getWorld().getName()) && potionE) {
+    	if(potionE) {
     		if(inSpawnRegion(e.getEntity().getLocation())) {
 				return;
 			}
@@ -4080,6 +4335,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
     
     public void doArmorEffects(Player p, List<String> lore) {
     	for(String effect : lore) {
+    		if(effect.length()>0) {
     		if(effect.charAt(effect.length()-1) == 'I') {
     			String effectname = ChatColor.stripColor(effect.substring(0, effect.lastIndexOf(" ")));
     			String amplifier = ChatColor.stripColor(effect.substring(effect.lastIndexOf(" ")+1, effect.length()));
@@ -4112,19 +4368,33 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
     			else if(effectname.equals("Slowness")) {
     				pt = PotionEffectType.SLOW;
     			}
+    			else if(effectname.equals("Resistance")) {
+    				pt = PotionEffectType.DAMAGE_RESISTANCE;
+    			}
     			else {
     				pt = PotionEffectType.getByName((effectname.toUpperCase().replace(" ", "_")));
     			}
     			if(pt != null) {
-    			addPotionEffectBetter(p, pt, 60, ampAmmount, false, false, false);
+    				if(pt == PotionEffectType.HEAL) {
+    					if(randor.nextInt(20)==0) {
+    						addPotionEffectBetter(p, pt, 20, ampAmmount, false, false, false);
+    					}
+    				}
+    				else if(pt.getName().equals("NIGHT_VISION")) {
+    					addPotionEffectBetter(p, pt, 20*16, ampAmmount, false, false, false);
+    				}
+    				else {
+    					addPotionEffectBetter(p, pt, 20*5, ampAmmount, false, false, false);
+    				}
     			}
+    		}
     		}
     	}
     }
     
     public void addPotionEffectsArmor() {
     	for(Player p : Bukkit.getOnlinePlayers()) {
-    		if(worlds.contains(p.getWorld().getName()) && potionE) {
+    		if(potionE) {
     		ItemStack[] armor = p.getInventory().getArmorContents();
     		for(int count = 0; count < armor.length; count++) {
     			ItemStack armorpiece = armor[count];
@@ -4176,11 +4446,19 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
     			else if(effectname.equals("Slowness")) {
     				pt = PotionEffectType.SLOW;
     			}
+    			else if(effectname.equals("Resistance")) {
+    				pt = PotionEffectType.DAMAGE_RESISTANCE;
+    			}
     			else {
     				pt = PotionEffectType.getByName((effectname.toUpperCase().replace(" ", "_")));
     			}
     			if(pt != null) {
-    			addPotionEffectBetter(p, pt, (15*20), ampAmmount, false, false, false);
+    				if(pt == PotionEffectType.HARM || pt == PotionEffectType.HEAL) {
+    					addPotionEffectBetter(p, pt, 20, ampAmmount, false, false, false);
+    				}
+    				else {
+    					addPotionEffectBetter(p, pt, (15*20), ampAmmount, false, false, false);
+    				}
     			}
     		}
     	}
@@ -4258,6 +4536,17 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
     				}
     				else {
     					name += "Haste II";
+    				}
+    			}
+    		}
+    		else if(pm.hasCustomEffect(PotionEffectType.DAMAGE_RESISTANCE)) {
+    			int amp = pm.getCustomEffects().get(0).getAmplifier();
+    			if(amp == 0 || amp == 1) {
+    				if(amp == 0) {
+    					name += "Resistance I";
+    				}
+    				else {
+    					name += "Resistance II";
     				}
     			}
     		}
@@ -4515,19 +4804,19 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		List<String> lore = new ArrayList<String>();
 		lore.add(ChatColor.BLACK + "Nether Artifact");
 		if(choice == 0) {
-			im.setDisplayName("Â§2Nether Artifact");
+			im.setDisplayName("§2Nether Artifact");
 		}
 		else if(choice == 1) {
-			im.setDisplayName("Â§8Nether Artifact");
+			im.setDisplayName("§8Nether Artifact");
 		}
 		else if(choice == 2) {
-			im.setDisplayName("Â§3Nether Artifact");
+			im.setDisplayName("§3Nether Artifact");
 		}
 		else if(choice == 3) {
-			im.setDisplayName("Â§6Nether Artifact");
+			im.setDisplayName("§6Nether Artifact");
 		}
 		else if(choice == 4) {
-			im.setDisplayName("Â§5Nether Artifact");
+			im.setDisplayName("§5Nether Artifact");
 		}
 		im.setLore(lore);
 		i.setItemMeta(im);
@@ -4700,7 +4989,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			if (randor.nextInt(5) == 1) {
 				item = new ItemStack(Material.FEATHER);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§fPulling Device");
+				itemmeta.setDisplayName("§fPulling Device");
 				itemmeta.setLore(Arrays.asList("Pulling Device Level: 3"));
 				itemmeta.addEnchant(Enchantment.LURE, 1, false);
 				itemmeta.hasItemFlag(ItemFlag.HIDE_ENCHANTS);
@@ -4709,7 +4998,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			else if (randor.nextInt(3) == 1) {
 				item = new ItemStack(Material.FEATHER);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§fPulling Device");
+				itemmeta.setDisplayName("§fPulling Device");
 				itemmeta.setLore(Arrays.asList("Pulling Device Level: 2"));
 				itemmeta.addEnchant(Enchantment.LURE, 1, false);
 				itemmeta.hasItemFlag(ItemFlag.HIDE_ENCHANTS);
@@ -4718,7 +5007,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			else {
 				item = new ItemStack(Material.FEATHER);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§fPulling Device");
+				itemmeta.setDisplayName("§fPulling Device");
 				itemmeta.setLore(Arrays.asList("Pulling Device Level: 1"));
 				itemmeta.addEnchant(Enchantment.LURE, 1, false);
 				itemmeta.hasItemFlag(ItemFlag.HIDE_ENCHANTS);
@@ -4729,21 +5018,21 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			if (randor.nextInt(5) == 1) {
 				item = new ItemStack(Material.COBWEB);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§fExplosive Web");
+				itemmeta.setDisplayName("§fExplosive Web");
 				itemmeta.setLore(Arrays.asList("Explosive Web Level: 3"));
 				item.setItemMeta(itemmeta);
 			} 
 			else if (randor.nextInt(3) == 1) {
 					item = new ItemStack(Material.COBWEB);
 					ItemMeta itemmeta = item.getItemMeta();
-					itemmeta.setDisplayName("Â§fExplosive Web");
+					itemmeta.setDisplayName("§fExplosive Web");
 					itemmeta.setLore(Arrays.asList("Explosive Web Level: 2"));
 					item.setItemMeta(itemmeta);
 			} 
 			else {
 					item = new ItemStack(Material.COBWEB);
 					ItemMeta itemmeta = item.getItemMeta();
-					itemmeta.setDisplayName("Â§fExplosive Web");
+					itemmeta.setDisplayName("§fExplosive Web");
 					itemmeta.setLore(Arrays.asList("Explosive Web Level: 1"));
 					item.setItemMeta(itemmeta);
 				}
@@ -4752,7 +5041,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			item = new ItemStack(Material.LEATHER_BOOTS);
 			LeatherArmorMeta itemM = (LeatherArmorMeta) item.getItemMeta();
 			itemM.setColor(Color.fromRGB(0, 0, 0));
-			itemM.setDisplayName("Â§0Boots of Beserk");
+			itemM.setDisplayName("§0Boots of Beserk");
 			itemM.setLore(Arrays.asList("Hide in the Dark but Die in the Light"));
 			item.setItemMeta(itemM);
 		}
@@ -4760,21 +5049,21 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			if (randor.nextInt(5) == 1) {
 				item = new ItemStack(Material.GRAY_DYE);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§7Special Egg");
+				itemmeta.setDisplayName("§7Special Egg");
 				itemmeta.setLore(Arrays.asList("Special Egg Level: 3"));
 				item.setItemMeta(itemmeta);
 			} 
 			else if (randor.nextInt(3) == 1) {
 					item = new ItemStack(Material.GRAY_DYE);
 					ItemMeta itemmeta = item.getItemMeta();
-					itemmeta.setDisplayName("Â§7Special Egg");
+					itemmeta.setDisplayName("§7Special Egg");
 					itemmeta.setLore(Arrays.asList("Special Egg Level: 2"));
 					item.setItemMeta(itemmeta);
 			} 
 			else {
 						item = new ItemStack(Material.GRAY_DYE);
 						ItemMeta itemmeta = item.getItemMeta();
-						itemmeta.setDisplayName("Â§7Special Egg");
+						itemmeta.setDisplayName("§7Special Egg");
 						itemmeta.setLore(Arrays.asList("Special Egg Level: 1"));
 						item.setItemMeta(itemmeta);
 			}
@@ -4783,21 +5072,21 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			if (randor.nextInt(5) == 1) {
 				item = new ItemStack(Material.SUGAR);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§9Nyoom");
+				itemmeta.setDisplayName("§9Nyoom");
 				itemmeta.setLore(Arrays.asList("Nyoom Level: 3"));
 				item.setItemMeta(itemmeta);
 			} 
 			else if (randor.nextInt(3) == 1) {
 					item = new ItemStack(Material.SUGAR);
 					ItemMeta itemmeta = item.getItemMeta();
-					itemmeta.setDisplayName("Â§9Nyoom");
+					itemmeta.setDisplayName("§9Nyoom");
 					itemmeta.setLore(Arrays.asList("Nyoom Level: 2"));
 					item.setItemMeta(itemmeta);
 			} 
 			else {
 						item = new ItemStack(Material.SUGAR);
 						ItemMeta itemmeta = item.getItemMeta();
-						itemmeta.setDisplayName("Â§9Nyoom");
+						itemmeta.setDisplayName("§9Nyoom");
 						itemmeta.setLore(Arrays.asList("Nyoom Level: 1"));
 						item.setItemMeta(itemmeta);
 				}
@@ -4805,7 +5094,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		else if(choose == 6) {
 			item = new ItemStack(Material.COAL);
 			ItemMeta itemmeta = item.getItemMeta();
-			itemmeta.setDisplayName("Â§0Really Sharp Dust");
+			itemmeta.setDisplayName("§0Really Sharp Dust");
 			itemmeta.setLore(Arrays.asList("Really Sharp Dust"));
 			item.setItemMeta(itemmeta);
 		}
@@ -4813,19 +5102,19 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			if (randor.nextInt(5) == 1) {
 				item = new ItemStack(Material.FLINT);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§0Wither Talisman");
+				itemmeta.setDisplayName("§0Wither Talisman");
 				itemmeta.setLore(Arrays.asList("Wither Talisman Level: 3"));
 				item.setItemMeta(itemmeta);
 			} else if (randor.nextInt(3) == 1) {
 				item = new ItemStack(Material.FLINT);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§0Wither Talisman");
+				itemmeta.setDisplayName("§0Wither Talisman");
 				itemmeta.setLore(Arrays.asList("Wither Talisman Level: 2"));
 				item.setItemMeta(itemmeta);
 				} else {
 					item = new ItemStack(Material.FLINT);
 					ItemMeta itemmeta = item.getItemMeta();
-					itemmeta.setDisplayName("Â§0Wither Talisman");
+					itemmeta.setDisplayName("§0Wither Talisman");
 					itemmeta.setLore(Arrays.asList("Wither Talisman Level: 1"));
 					item.setItemMeta(itemmeta);
 				}
@@ -4834,13 +5123,13 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			if (randor.nextInt(5) == 1) {
 				item = new ItemStack(Material.LIME_DYE);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§aTheif Talisman");
+				itemmeta.setDisplayName("§aTheif Talisman");
 				itemmeta.setLore(Arrays.asList("Theif Talisman Level: 2"));
 				item.setItemMeta(itemmeta);
 			} else{
 				item = new ItemStack(Material.LIME_DYE);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§aTheif Talisman");
+				itemmeta.setDisplayName("§aTheif Talisman");
 				itemmeta.setLore(Arrays.asList("Theif Talisman Level: 1"));
 				item.setItemMeta(itemmeta);
 				}
@@ -4848,7 +5137,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		else if(choose == 9) {
 			item = new ItemStack(Material.SAND);
 			ItemMeta itemmeta = item.getItemMeta();
-			itemmeta.setDisplayName("Â§eQuicksand Talisman");
+			itemmeta.setDisplayName("§eQuicksand Talisman");
 			itemmeta.setLore(Arrays.asList("Quicksand Talisman"));
 			item.setItemMeta(itemmeta);
 		}
@@ -4885,14 +5174,14 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 				item = new ItemStack(Material.COOKED_RABBIT);
 			}
 			ItemMeta itemmeta = item.getItemMeta();
-			itemmeta.setDisplayName("Â§cHearty Food");
+			itemmeta.setDisplayName("§cHearty Food");
 			itemmeta.setLore(Arrays.asList("Hearty Food"));
 			item.setItemMeta(itemmeta);
 		}
 		else if(choose == 11) {
 			item = new ItemStack(Material.RED_DYE);
 			ItemMeta itemmeta = item.getItemMeta();
-			itemmeta.setDisplayName("Â§cLifesteal Talisman");
+			itemmeta.setDisplayName("§cLifesteal Talisman");
 			itemmeta.setLore(Arrays.asList("Lifesteal Talisman"));
 			item.setItemMeta(itemmeta);
 		}
@@ -4900,7 +5189,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			item = new ItemStack(Material.SPLASH_POTION);
 			PotionMeta potionMeta = (PotionMeta) item.getItemMeta();
 			potionMeta.setColor(Color.YELLOW);
-			potionMeta.setDisplayName("Â§eLightning Bottle");
+			potionMeta.setDisplayName("§eLightning Bottle");
 			potionMeta.setLore(Arrays.asList("Lightning Bottle"));
 			potionMeta.addEnchant(Enchantment.LURE, 1, false);
 			potionMeta.hasItemFlag(ItemFlag.HIDE_ENCHANTS);
@@ -4910,21 +5199,21 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			if (randor.nextInt(5) == 1) {
 				item = new ItemStack(Material.FERMENTED_SPIDER_EYE);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§4Eye of Weakness");
+				itemmeta.setDisplayName("§4Eye of Weakness");
 				itemmeta.setLore(Arrays.asList("Eye of Weakness Level: 3"));
 				item.setItemMeta(itemmeta);
 			} 
 			else if (randor.nextInt(3) == 1) {
 				item = new ItemStack(Material.FERMENTED_SPIDER_EYE);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§4Eye of Weakness");
+				itemmeta.setDisplayName("§4Eye of Weakness");
 				itemmeta.setLore(Arrays.asList("Eye of Weakness Level: 2"));
 				item.setItemMeta(itemmeta);
 				} 
 			else {
 					item = new ItemStack(Material.FERMENTED_SPIDER_EYE);
 					ItemMeta itemmeta = item.getItemMeta();
-					itemmeta.setDisplayName("Â§4Eye of Weakness");
+					itemmeta.setDisplayName("§4Eye of Weakness");
 					itemmeta.setLore(Arrays.asList("Eye of Weakness Level: 1"));
 					item.setItemMeta(itemmeta);
 					
@@ -4934,19 +5223,19 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			if (randor.nextInt(5) == 1) {
 				item = new ItemStack(Material.FIRE_CHARGE);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§6Molten Core");
+				itemmeta.setDisplayName("§6Molten Core");
 				itemmeta.setLore(Arrays.asList("Molten Core Level: 3"));
 				item.setItemMeta(itemmeta);
 			} else if (randor.nextInt(3) == 1) {
 				item = new ItemStack(Material.FIRE_CHARGE);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§6Molten Core");
+				itemmeta.setDisplayName("§6Molten Core");
 				itemmeta.setLore(Arrays.asList("Molten Core Level: 2"));
 				item.setItemMeta(itemmeta);
 				} else {
 					item = new ItemStack(Material.FIRE_CHARGE);
 					ItemMeta itemmeta = item.getItemMeta();
-					itemmeta.setDisplayName("Â§6Molten Core");
+					itemmeta.setDisplayName("§6Molten Core");
 					itemmeta.setLore(Arrays.asList("Molten Core Level: 1"));
 					item.setItemMeta(itemmeta);
 					
@@ -4955,14 +5244,14 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		else if(choose == 15) {
 			item = new ItemStack(Material.PRISMARINE_SHARD);
 			ItemMeta itemmeta = item.getItemMeta();
-			itemmeta.setDisplayName("Â§3Gravity Anomaly");
+			itemmeta.setDisplayName("§3Gravity Anomaly");
 			itemmeta.setLore(Arrays.asList("Gravity Anomaly"));
 			item.setItemMeta(itemmeta);
 		}
 		else if(choose == 16) {
 			item = new ItemStack(Material.ROTTEN_FLESH);
 			ItemMeta itemmeta = item.getItemMeta();
-			itemmeta.setDisplayName("Â§8Spoiled Food");
+			itemmeta.setDisplayName("§8Spoiled Food");
 			itemmeta.setLore(Arrays.asList("Spoiled Food"));
 			item.setItemMeta(itemmeta);
 		}
@@ -4970,7 +5259,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			if (randor.nextInt(5) == 1) {
 				item = new ItemStack(Material.FIRE_CHARGE);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§6Compressed Fireball");
+				itemmeta.setDisplayName("§6Compressed Fireball");
 				itemmeta.setLore(Arrays.asList("Compressed Fireball Level: 3"));
 				itemmeta.addEnchant(Enchantment.LURE, 1, false);
 				itemmeta.hasItemFlag(ItemFlag.HIDE_ENCHANTS);
@@ -4979,7 +5268,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			else if (randor.nextInt(3) == 1) {
 				item = new ItemStack(Material.FIRE_CHARGE);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§6Compressed Fireball");
+				itemmeta.setDisplayName("§6Compressed Fireball");
 				itemmeta.setLore(Arrays.asList("Compressed Fireball Level: 2"));
 				itemmeta.addEnchant(Enchantment.LURE, 1, false);
 				itemmeta.hasItemFlag(ItemFlag.HIDE_ENCHANTS);
@@ -4988,7 +5277,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			else {
 					item = new ItemStack(Material.FIRE_CHARGE);
 					ItemMeta itemmeta = item.getItemMeta();
-					itemmeta.setDisplayName("Â§6Compressed Fireball");
+					itemmeta.setDisplayName("§6Compressed Fireball");
 					itemmeta.setLore(Arrays.asList("Compressed Fireball Level: 1"));
 					itemmeta.addEnchant(Enchantment.LURE, 1, false);
 					itemmeta.hasItemFlag(ItemFlag.HIDE_ENCHANTS);
@@ -5000,19 +5289,19 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			if (randor.nextInt(5) == 1) {
 				item = new ItemStack(Material.BOW);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§7Assault Bow");
+				itemmeta.setDisplayName("§7Assault Bow");
 				itemmeta.setLore(Arrays.asList("Assault Bow Level: 3"));
 				item.setItemMeta(itemmeta);
 			} else if (randor.nextInt(3) == 1) {
 				item = new ItemStack(Material.BOW);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§7Assault Bow");
+				itemmeta.setDisplayName("§7Assault Bow");
 				itemmeta.setLore(Arrays.asList("Assault Bow Level: 2"));
 				item.setItemMeta(itemmeta);
 				} else {
 					item = new ItemStack(Material.BOW);
 					ItemMeta itemmeta = item.getItemMeta();
-					itemmeta.setDisplayName("Â§7Assault Bow");
+					itemmeta.setDisplayName("§7Assault Bow");
 					itemmeta.setLore(Arrays.asList("Assault Bow Level: 1"));
 					item.setItemMeta(itemmeta);
 				}
@@ -5021,19 +5310,19 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			if (randor.nextInt(5) == 1) {
 				item = new ItemStack(Material.GOLDEN_AXE);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§0Anogoth");
+				itemmeta.setDisplayName("§0Anogoth");
 				itemmeta.setLore(Arrays.asList("Anogoth Level: 3"));
 				item.setItemMeta(itemmeta);
 			} else if (randor.nextInt(3) == 1) {
 				item = new ItemStack(Material.GOLDEN_AXE);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§0Anogoth");
+				itemmeta.setDisplayName("§0Anogoth");
 				itemmeta.setLore(Arrays.asList("Anogoth Level: 2"));
 				item.setItemMeta(itemmeta);
 				} else {
 					item = new ItemStack(Material.GOLDEN_AXE);
 					ItemMeta itemmeta = item.getItemMeta();
-					itemmeta.setDisplayName("Â§0Anogoth");
+					itemmeta.setDisplayName("§0Anogoth");
 					itemmeta.setLore(Arrays.asList("Anogoth Level: 1"));
 					item.setItemMeta(itemmeta);
 				}
@@ -5042,19 +5331,19 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			if (randor.nextInt(5) == 1) {
 				item = new ItemStack(Material.IRON_CHESTPLATE);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§7Nano-Tech Armor");
+				itemmeta.setDisplayName("§7Nano-Tech Armor");
 				itemmeta.setLore(Arrays.asList("Nano-Tech Armor Level: 3"));
 				item.setItemMeta(itemmeta);
 			} else if (randor.nextInt(3) == 1) {
 				item = new ItemStack(Material.IRON_CHESTPLATE);
 				ItemMeta itemmeta = item.getItemMeta();
-				itemmeta.setDisplayName("Â§7Nano-Tech Armor");
+				itemmeta.setDisplayName("§7Nano-Tech Armor");
 				itemmeta.setLore(Arrays.asList("Nano-Tech Armor Level: 2"));
 				item.setItemMeta(itemmeta);
 				} else {
 					item = new ItemStack(Material.IRON_CHESTPLATE);
 					ItemMeta itemmeta = item.getItemMeta();
-					itemmeta.setDisplayName("Â§7Nano-Tech Armor");
+					itemmeta.setDisplayName("§7Nano-Tech Armor");
 					itemmeta.setLore(Arrays.asList("Nano-Tech Armor Level: 1"));
 					item.setItemMeta(itemmeta);
 					
@@ -5063,7 +5352,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		else if(choose == 21) {
 			item = new ItemStack(Material.GHAST_TEAR);
 			ItemMeta itemmeta = item.getItemMeta();
-			itemmeta.setDisplayName("Â§0Goddess Tear");
+			itemmeta.setDisplayName("§0Goddess Tear");
 			itemmeta.setLore(Arrays.asList("Goddess Tear"));
 			itemmeta.addEnchant(Enchantment.LURE, 1, false);
 			itemmeta.hasItemFlag(ItemFlag.HIDE_ENCHANTS);
@@ -5072,7 +5361,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		else if(choose == 22) {
 			item = new ItemStack(Material.GOLD_NUGGET);
 			ItemMeta itemmeta = item.getItemMeta();
-			itemmeta.setDisplayName("Â§6Beserk Tear");
+			itemmeta.setDisplayName("§6Beserk Tear");
 			itemmeta.setLore(Arrays.asList("Beserk Tear"));
 			itemmeta.addEnchant(Enchantment.LURE, 1, false);
 			itemmeta.hasItemFlag(ItemFlag.HIDE_ENCHANTS);
@@ -5081,7 +5370,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		else if(choose == 23) {
 			item = new ItemStack(Material.IRON_NUGGET);
 			ItemMeta itemmeta = item.getItemMeta();
-			itemmeta.setDisplayName("Â§7Screamer Talisman");
+			itemmeta.setDisplayName("§7Screamer Talisman");
 			itemmeta.setLore(Arrays.asList("Screamer Talisman"));
 			itemmeta.addEnchant(Enchantment.LURE, 1, false);
 			itemmeta.hasItemFlag(ItemFlag.HIDE_ENCHANTS);
@@ -5091,7 +5380,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			item = new ItemStack(Material.PLAYER_HEAD, 1 , (short) 3);
 			SkullMeta itemmeta = (SkullMeta) item.getItemMeta();
 			itemmeta.setOwner("colin");
-			itemmeta.setDisplayName("Â§4Watcher Head");
+			itemmeta.setDisplayName("§4Watcher Head");
 			itemmeta.setLore(Arrays.asList("Watcher Head"));
 			item.setItemMeta(itemmeta);
 		}
@@ -5099,7 +5388,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		else if(choose == 25) {
 			item = new ItemStack(Material.FIRE_CHARGE);
 			ItemMeta itemmeta = item.getItemMeta();
-			itemmeta.setDisplayName("Â§6DIY Fireball");
+			itemmeta.setDisplayName("§6DIY Fireball");
 			itemmeta.setLore(Arrays.asList("DIY Fireball"));
 			item.setItemMeta(itemmeta);
 		}
@@ -5107,7 +5396,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			item = new ItemStack(Material.POTION);
 			PotionMeta itemmeta = (PotionMeta) item.getItemMeta();
 			itemmeta.setColor(Color.BLACK);
-			itemmeta.setDisplayName("Â§0Keeper's Blood");
+			itemmeta.setDisplayName("§0Keeper's Blood");
 			itemmeta.setLore(Arrays.asList("Keeper's Blood"));
 			itemmeta.addCustomEffect(new PotionEffect(PotionEffectType.FAST_DIGGING, 2400, 29), true);
 			itemmeta.addCustomEffect(new PotionEffect(PotionEffectType.SPEED, 2400, 6), true);
@@ -5121,7 +5410,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			item = new ItemStack(Material.LINGERING_POTION);
 			PotionMeta itemmeta = (PotionMeta) item.getItemMeta();
 			itemmeta.setColor(Color.WHITE);
-			itemmeta.setDisplayName("Â§fShadow Dust");
+			itemmeta.setDisplayName("§fShadow Dust");
 			itemmeta.setLore(Arrays.asList("Shadow Dust"));
 			itemmeta.addCustomEffect(new PotionEffect(PotionEffectType.WITHER, 400, 4), true);
 			itemmeta.addCustomEffect(new PotionEffect(PotionEffectType.BLINDNESS, 400, 6), true);
@@ -5133,14 +5422,14 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		else if(choose == 28) {
 			item = new ItemStack(Material.FLINT_AND_STEEL);
 			ItemMeta itemmeta = item.getItemMeta();
-			itemmeta.setDisplayName("Â§eFlint and Thermite");
+			itemmeta.setDisplayName("§eFlint and Thermite");
 			itemmeta.setLore(Arrays.asList("Flint and Thermite"));
 			item.setItemMeta(itemmeta);
 		}
 		else if(choose == 29) {
 			item = new ItemStack(Material.PINK_DYE);
 			ItemMeta itemmeta = item.getItemMeta();
-			itemmeta.setDisplayName("Â§dCute Egg");
+			itemmeta.setDisplayName("§dCute Egg");
 			itemmeta.setLore(Arrays.asList("Cute Egg"));
 			item.setItemMeta(itemmeta);
 		}
@@ -5148,7 +5437,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			item = new ItemStack(Material.LEATHER_HELMET);
 			LeatherArmorMeta itemM = (LeatherArmorMeta) item.getItemMeta();
 			itemM.setColor(Color.fromRGB(58, 34, 7));
-			itemM.setDisplayName("Â§8Linear Device");
+			itemM.setDisplayName("§8Linear Device");
 			itemM.setLore(Arrays.asList("Linear Device"));
 			item.setItemMeta(itemM);
 		}
@@ -5745,7 +6034,15 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 				if(inSpawnRegion(event.getEntity().getLocation())) {
 					return;
 				}
-				event.getEntity().getWorld().strikeLightning(event.getHitBlock().getLocation().add(0, 1, 0));
+				if(event.getHitBlock() != null) {
+					event.getHitBlock().getWorld().strikeLightning(event.getHitBlock().getRelative(event.getHitBlockFace()).getLocation());
+				}
+				else if(event.getHitEntity() != null) {
+					event.getHitEntity().getWorld().strikeLightning(event.getHitEntity().getLocation());
+				}
+				else if(event.getEntity() != null) {
+					event.getEntity().getWorld().strikeLightning(event.getEntity().getLocation());
+				}
 			}
 	}
 	
@@ -5830,12 +6127,17 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 	
 	@EventHandler
 	public void onEntityKillPlayer(EntityDamageByEntityEvent e) {
+		if(artifactsE) {
+		if(isNotWorld(e.getEntity())) {
+			return;
+		}
 		if(e.isCancelled()) {
 			return;
 		}
-		if(e.getEntity() instanceof Player && (!(e.getDamager() instanceof Player))) {
+		if(notnpc(e.getEntity()) && (!(e.getDamager() instanceof Player))) {
 			Player p = (Player) e.getEntity();
 			e.setDamage(runDamage(p, "final", e.getFinalDamage(), null));
+		}
 		}
 	}
 	
@@ -5844,7 +6146,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		if(e.isCancelled()) {
 			return;
 		}
-		if((e.getEntity() instanceof Player) && ((e.getCause() != DamageCause.ENTITY_ATTACK) && (e.getCause() != DamageCause.ENTITY_SWEEP_ATTACK))) {
+		if((notnpc(e.getEntity())) && ((e.getCause() != DamageCause.ENTITY_ATTACK) && (e.getCause() != DamageCause.ENTITY_SWEEP_ATTACK))) {
 			Player p = (Player) e.getEntity();
 		
 			if(randor.nextInt(15)==1) {
@@ -6559,7 +6861,9 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		public void interact(PlayerInteractEvent e){
 		        Action eventAction = e.getAction();
 		        Player player = e.getPlayer();
-		 
+		        if(!shopGUIS.enabled.containsKey(player.getName())) {
+					return;
+				}
 		      if (eventAction == Action.RIGHT_CLICK_AIR){
 		    	  if(shopGUIS.enabled.get(player.getName()).contains(217)) {
 		            if (player.getInventory().getItemInMainHand().getType().equals(Material.FIRE_CHARGE)){
@@ -6596,6 +6900,12 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		@EventHandler
 	    public void onPlayerShift(PlayerToggleSneakEvent e){
 			Player p = e.getPlayer();
+			if(!notnpc(p)) {
+				return;
+			}
+			if(!shopGUIS.enabled.containsKey(p.getName())) {
+				return;
+			}
 			if(p.isOnGround()) {
 				if(shopGUIS.enabled.get(p.getName()).contains(34)) {
 					p.setVelocity(p.getVelocity().add(new Vector(0, 3.7, 0)));
@@ -6634,9 +6944,12 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		
 		@EventHandler
 	    public void onDamageEvent(EntityDamageByEntityEvent e){
-	        if (e.getEntity() instanceof Player && (e.getDamager() instanceof LivingEntity)) {
+	        if (notnpc(e.getEntity()) && (e.getDamager() instanceof LivingEntity)) {
 	            LivingEntity damager = (LivingEntity) e.getDamager();
 	            Player p = (Player) e.getEntity();
+	            if(!shopGUIS.enabled.containsKey(p.getName())) {
+					return;
+				}
 	            if(shopGUIS.enabled.get(p.getName()).contains(32)) {
 	            	Bukkit.getScheduler().runTaskLater(this, () -> p.setVelocity(new Vector(0, 0, 0)), (long) 1);
 	            }
@@ -6648,8 +6961,11 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		
 		@EventHandler
 		public void onFireAndLavaDamage(EntityDamageEvent e) {
-			if(e.getEntity() instanceof Player) {
+			if(notnpc(e.getEntity())) {
 				Player p = (Player) e.getEntity();
+				if(!shopGUIS.enabled.containsKey(p.getName())) {
+					return;
+				}
 				if(shopGUIS.enabled.get(p.getName()).contains(14)){
 					if(e.getCause() == DamageCause.FIRE || e.getCause() == DamageCause.FIRE_TICK || e.getCause() == DamageCause.LAVA) {
 						e.setCancelled(true);
@@ -6692,6 +7008,9 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		
 		@EventHandler
 		public void OnPlayerMove(PlayerMoveEvent e) {
+			if(!shopGUIS.enabled.containsKey(e.getPlayer().getName())) {
+				return;
+			}
 			if(shopGUIS.enabled.get(e.getPlayer().getName()).contains(5)) {
 				if(e.getPlayer().getPotionEffect(PotionEffectType.SPEED)!=null) {
 
@@ -6728,8 +7047,11 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		
 		@EventHandler
 		public void OnDamaged(EntityDamageByEntityEvent e) {
-			if(e.getEntity() instanceof Player) {
+			if(notnpc(e.getEntity())) {
 				Player p = (Player) e.getEntity();
+				if(!shopGUIS.enabled.containsKey(p.getName())) {
+					return;
+				}
 				List<Integer> abilities = shopGUIS.enabled.get(p.getName());
 				if(randor.nextInt(8)==1) {
 					if(abilities.contains(6)) {
@@ -7117,6 +7439,12 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		@EventHandler
 		public void onFoodEat(PlayerItemConsumeEvent e) {
 			Player p = e.getPlayer();
+			if(!notnpc(p)) {
+				return;
+			}
+			if(!shopGUIS.enabled.containsKey(p.getName())) {
+				return;
+			}
 			if(e.getItem().hasItemMeta()) {
 				ItemStack food = e.getItem();
 				if(food.getItemMeta().hasDisplayName()) {
@@ -7130,7 +7458,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 						Bukkit.getScheduler().runTaskLater(this, () -> p.getInventory().setItemInMainHand(carrot), 5);
 					}
 					else if(displayname.equals(ChatColor.GREEN + "Infinite Melon") && shopGUIS.enabled.get(p.getName()).contains(48)) {
-						ItemStack melon = shopGUIS.makeItem(Material.MELON.name(), ChatColor.GREEN + "Infinite Melon", Arrays.asList(ChatColor.GRAY + "Yummy melon that never runs out."), false);
+						ItemStack melon = shopGUIS.makeItem(Material.MELON_SLICE.name(), ChatColor.GREEN + "Infinite Melon", Arrays.asList(ChatColor.GRAY + "Yummy melon that never runs out."), false);
 						Bukkit.getScheduler().runTaskLater(this, () -> p.getInventory().setItemInMainHand(melon), 5);
 					}
 					else if(displayname.equals(ChatColor.RED + "Infinite Beef") && shopGUIS.enabled.get(p.getName()).contains(49)) {
@@ -7199,10 +7527,12 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		@EventHandler
 	    public void manipulate(PlayerArmorStandManipulateEvent e)
 	    {
+			if(artifactsE) {
 	            if(!e.getRightClicked().isVisible())
 	            {
 	                e.setCancelled(true);
 	            }
+			}
 	    }
 		
 		public void spawnInstantFirework(Location l, int power, Color c) {
@@ -7215,9 +7545,10 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 	        Bukkit.getScheduler().runTaskLater(this, () -> fw.detonate(), (long) 2);
 		}
 		
-		public void spawnColorParticle(Location l, int ammount, double r, double g, double b) {
+		public void spawnColorParticle(Location l, int ammount, int r, int g, int b) {
 			for(int count = 0; count < ammount; count++) {
-			l.getWorld().spawnParticle(Particle.REDSTONE, l.getX(), l.getY(), l.getZ(), 0, r, g, b, 1);
+			 	DustOptions dustOptions = new DustOptions(Color.fromRGB(r, g, b), 1);
+			 	l.getWorld().spawnParticle(Particle.REDSTONE, l, 1, dustOptions);
 			}
 		}
 		
@@ -7234,7 +7565,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			for (double d = 0; d < line.length()/2.0; d += step) {
 				final double dd = d;
 				Location l = start.clone().add(line.clone().multiply(dd));
-				Bukkit.getScheduler().runTaskLater(this, () ->  spawnColorParticle(l, 1, 0.001, .666, .666), (long) (1*(d*5)));
+				Bukkit.getScheduler().runTaskLater(this, () ->  spawnColorParticle(l, 1, 25, 255, 223), (long) (1*(d*5)));
 			}
 			if(randor.nextInt(4)==0) {
 				spawnInstantFirework(end, 1, Color.AQUA);
@@ -7317,6 +7648,9 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		public void checkEnabledAbiltiesOnJoinA(PlayerJoinEvent e) {
 			if(artifactsE) {
 			Player p = e.getPlayer();
+			if(!notnpc(p)) {
+				return;
+			}
 			if(shopGUIS.enabled.containsKey(e.getPlayer().getName())) {
 			List<Integer> abilities = shopGUIS.enabled.get(e.getPlayer().getName());
 			if(abilities.contains(87)) {
@@ -7535,7 +7869,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 						e.getWorld().spawnParticle(Particle.CLOUD, e.getLocation(), 1, 0, 0, 0, 0.0001);
 						if(randor.nextBoolean()) {
 							LlamaSpit ls = (LlamaSpit) e.getWorld().spawnEntity(e.getLocation(), EntityType.LLAMA_SPIT);
-							if(larry != null) {
+							if(Bukkit.getEntity(UUID.fromString(larry)) != null) {
 								ls.setShooter((ProjectileSource) ((Llama) Bukkit.getEntity(UUID.fromString(larry))));
 							}
 						}
@@ -7606,8 +7940,11 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			if(inSpawnRegion(e.getEntity().getLocation())) {
 				return;
 			}
-			if(e.getEntity() instanceof Player) {
+			if(notnpc(e.getEntity())) {
 				Player p = (Player) e.getEntity();
+				if(!shopGUIS.enabled.containsKey(p.getName())) {
+					return;
+				}
 				int count = 1;
 				Vector finalv = new Vector(0,0,0);
 				List<Integer> abilities = new ArrayList<Integer>(shopGUIS.enabled.get(p.getName()));
@@ -7830,7 +8167,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		
 		@EventHandler
 		public void onPlayerPickupExperience(EntityPickupItemEvent e) {
-			if(e.getEntity() instanceof Player) {
+			if(notnpc(e.getEntity())) {
 				ItemStack item = e.getItem().getItemStack();
 				if(hasLore(item, "experience")) {
 					e.setCancelled(true);
@@ -8020,7 +8357,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		public void entityHitByArrow(EntityDamageByEntityEvent e) {
 			if(!e.isCancelled()) {
 				if(e.getEntity() instanceof LivingEntity && e.getDamager() instanceof Projectile) {
-					if(e.getEntity() instanceof Player) {
+					if(notnpc(e.getEntity())) {
 						if(e.getDamager().hasMetadata(((Player) e.getEntity()).getName())){
 							e.setCancelled(true);
 							return;
@@ -8391,8 +8728,14 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 				Location to = e.getTo();
 				Location from = e.getFrom();
 				if(!(((int)from.getX()==(int)to.getX())&&((int)from.getY()==(int)to.getY())&&((int)from.getZ()==(int)to.getZ()))) {
-					if(to.clone().subtract(0, 1, 0).getBlock().getType()==Material.SLIME_BLOCK) {
-						addPotionEffectBetter(e.getPlayer(), PotionEffectType.SLOW, 200, 1, false, false, false);
+					//if(to.clone().subtract(0, 1, 0).getBlock().getType()==Material.SLIME_BLOCK) {
+					//	addPotionEffectBetter(e.getPlayer(), PotionEffectType.SLOW, 200, 1, false, false, false);
+					//}
+					if(!notnpc(e.getPlayer())) {
+						return;
+					}
+					if(!shopGUIS.enabled.containsKey(e.getPlayer().getName())) {
+						return;
 					}
 					fireWalk(e.getPlayer(), e.getFrom());
 				}
@@ -8467,6 +8810,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			Player p = e.getPlayer();
 			if(shopGUIS.enabled.containsKey(e.getPlayer().getName())) {
 			List<Integer> abilities = shopGUIS.enabled.get(e.getPlayer().getName());
+			passiveJoin(p, shopGUIS.enabled.get(e.getPlayer().getName()));
 			if(abilities.contains(147)) {
 				if(playertimes.containsKey(p.getName())) {
 					for(String disctype : discnames.keySet()) {
@@ -8499,6 +8843,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			if(abilnum == 152) {
 				ability152.add(p);
 			}
+			passiveEnable(p, abilnum);
 		}
 		
 		public void disabledAbilityP(int abilnum, Player p) {
@@ -8519,11 +8864,18 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			if(abilnum == 152) {
 				ability152.remove(p);
 			}
+			passiveDisable(p, abilnum);
 		}
 		
 		@EventHandler
 		public void onPlayerHitWithHand(PlayerInteractEvent e) {
 				Player p = e.getPlayer();
+				if(!notnpc(p)) {
+					return;
+				}
+				if(!shopGUIS.enabled.containsKey(p.getName())) {
+					return;
+				}
 					if(e.getAction() == Action.LEFT_CLICK_AIR) {
 						if(shopGUIS.enabled.get(p.getName()).contains(143)) {
 							if(p.getInventory().getItemInMainHand()==null) {
@@ -8545,11 +8897,13 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		@EventHandler
 		public void onPlayerTeleportEnderpearl(PlayerTeleportEvent e) {
 			if(e.getCause() == TeleportCause.ENDER_PEARL) {
+				if(notnpc(e.getPlayer())) {
 			if(shopGUIS.enabled.containsKey(e.getPlayer().getName())) {
 			if(shopGUIS.enabled.get(e.getPlayer().getName()).contains(143)) {
 				if(e.getFrom().distance(e.getTo())>10) {
 					e.setCancelled(true);
 				}
+			}
 			}
 			}
 			}
@@ -8568,9 +8922,12 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		@EventHandler
 		public void entityHitByPlayer(EntityDamageByEntityEvent e) {
 			if(!e.isCancelled()) {
-				if(e.getEntity() instanceof LivingEntity && e.getDamager() instanceof Player) {
+				if(e.getEntity() instanceof LivingEntity && notnpc(e.getDamager())) {
 					LivingEntity le = (LivingEntity) e.getEntity();
 					Player p = (Player) e.getDamager();
+					if(!shopGUIS.enabled.containsKey(p.getName())) {
+						return;
+					}
 					if(shopGUIS.enabled.get(p.getName()).contains(139)) {
 						if(randor.nextInt(6)==0) {
 							le.getWorld().playSound(le.getLocation(), Sound.BLOCK_LEVER_CLICK, 1, 2);
@@ -8776,6 +9133,12 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		@EventHandler
 		public void swordInteractEvent(PlayerInteractEvent e) {
 			Player p = e.getPlayer();
+			if(!notnpc(p)) {
+				return;
+			}
+			if(!shopGUIS.enabled.containsKey(p.getName())) {
+				return;
+			}
 			List<Integer> abilities = shopGUIS.enabled.get(e.getPlayer().getName());
 			if(e.getAction() == Action.LEFT_CLICK_AIR || e.getAction() == Action.LEFT_CLICK_BLOCK) {
 				if(abilities.contains(57)) {
@@ -8807,6 +9170,7 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 		public void resetInventory(int abilitynum, Player p) {
 			int index = abilitynum;
 			PlayerInventory i = p.getInventory();
+			Location l = p.getLocation();
 			if(index == 91) {
 			ItemStack bow = shopGUIS.makeItem(Material.BOW.name(), ChatColor.YELLOW + "Sleek Bow", Arrays.asList(ChatColor.GRAY + "A sleek wooden bow."), true);
 			bow.addUnsafeEnchantment(Enchantment.ARROW_INFINITE, 10);
@@ -8814,144 +9178,143 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			ItemMeta itemmeta = bow.getItemMeta();
 			itemmeta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
 			bow.setItemMeta(itemmeta);
-			i.setItem(8, bow);
-			i.setItem(7, new ItemStack(Material.ARROW, 1));
+			p.getWorld().dropItemNaturally(p.getLocation(), bow);
 			}
 				//swords
 			else if(index == 56) {
-					p.getInventory().setItemInOffHand(new ItemStack(Material.SHIELD));
+					//p.getInventory().setItemInOffHand(new ItemStack(Material.SHIELD));
 				}
 			else if(index == 55) {
 					ItemStack sword = shopGUIS.makeItem(Material.WOODEN_SWORD.name(), ChatColor.GRAY + "Wooden Sword", Arrays.asList(ChatColor.GRAY + "A dull wooden sword."), true);
-					i.setItem(0, sword);
+					p.getWorld().dropItemNaturally(p.getLocation(), sword);
 				}
 				else if(index == 63) {
 					ItemStack axe = shopGUIS.makeItem(Material.WOODEN_AXE.name(), ChatColor.GRAY + "Wooden Axe", Arrays.asList(ChatColor.GRAY + "A dull wooden axe."), true);
-					i.setItem(0, axe);
+					p.getWorld().dropItemNaturally(p.getLocation(), axe);
 				}
 				else if(index ==64) {
 					ItemStack sword = shopGUIS.makeItem(Material.IRON_SWORD.name(), ChatColor.WHITE + "Iron Sword", Arrays.asList(ChatColor.GRAY + "A sharp iron sword."), true);
-					i.setItem(0, sword);
+					p.getWorld().dropItemNaturally(p.getLocation(), sword);
 				}
 				else if(index ==72) {
 					ItemStack axe = shopGUIS.makeItem(Material.IRON_AXE.name(), ChatColor.WHITE + "Iron Axe", Arrays.asList(ChatColor.GRAY + "A sharp iron axe."), true);
-					i.setItem(0, axe);
+					p.getWorld().dropItemNaturally(p.getLocation(), axe);
 				}
 				else if(index == 73) {
 					ItemStack sword = shopGUIS.makeItem(Material.DIAMOND_SWORD.name(), ChatColor.AQUA + "Diamond Sword", Arrays.asList(ChatColor.GRAY + "The sharpest blade in", ChatColor.GRAY + "the land."), true);
-					i.setItem(0, sword);
+					p.getWorld().dropItemNaturally(p.getLocation(), sword);
 				}
 				else if(index == 81) {
 					ItemStack axe = shopGUIS.makeItem(Material.DIAMOND_AXE.name(), ChatColor.AQUA + "Diamond Axe", Arrays.asList(ChatColor.GRAY + "The sharpest axe in", ChatColor.GRAY + "the land."), true);
-					i.setItem(0, axe);
+					p.getWorld().dropItemNaturally(p.getLocation(), axe);
 				}
 				else if(index == 47) {
 					ItemStack carrot = shopGUIS.makeItem(Material.CARROT.name(), ChatColor.DARK_GREEN + "Infinite Carrot", Arrays.asList(ChatColor.GRAY + "Yummy carrot that never runs out."), false);
-					i.setItem(1, carrot);
+					p.getWorld().dropItemNaturally(p.getLocation(), carrot);
 				}
 				else if(index == 48) {
-					ItemStack melon = shopGUIS.makeItem(Material.MELON.name(), ChatColor.GREEN + "Infinite Melon", Arrays.asList(ChatColor.GRAY + "Yummy melon that never runs out."), false);
-					i.setItem(1, melon);
+					ItemStack melon = shopGUIS.makeItem(Material.MELON_SLICE.name(), ChatColor.GREEN + "Infinite Melon", Arrays.asList(ChatColor.GRAY + "Yummy melon that never runs out."), false);
+					p.getWorld().dropItemNaturally(p.getLocation(), melon);
 				}
 				else if(index == 49) {
 					ItemStack rawbeef = shopGUIS.makeItem(Material.BEEF.name(), ChatColor.RED + "Infinite Beef", Arrays.asList(ChatColor.GRAY + "Yummy beef that never runs out."), false);
-					i.setItem(1, rawbeef);
+					p.getWorld().dropItemNaturally(p.getLocation(), rawbeef);
 				}
 				else if(index == 50) {
 					ItemStack cfish = shopGUIS.makeItem(Material.COOKED_COD.name(), ChatColor.BLUE + "Infinite Fish", Arrays.asList(ChatColor.GRAY + "Yummy fish that never runs out."), false);
-					i.setItem(1, cfish);
+					p.getWorld().dropItemNaturally(p.getLocation(), cfish);
 				}
 				else if(index == 51) {
 					ItemStack cbeef = shopGUIS.makeItem(Material.COOKED_BEEF.name(), ChatColor.DARK_RED + "Infinite Steak", Arrays.asList(ChatColor.GRAY + "Yummy steak that never runs out."), false);
-					i.setItem(1, cbeef);
+					p.getWorld().dropItemNaturally(p.getLocation(), cbeef);
 				}
 				else if(index == 52) {
 					ItemStack msoup = shopGUIS.makeItem(Material.MUSHROOM_STEW.name(), ChatColor.DARK_AQUA + "Infinite Soup", Arrays.asList(ChatColor.GRAY + "Yummy soup that never runs out."), false);
-					i.setItem(1, msoup);
+					p.getWorld().dropItemNaturally(p.getLocation(), msoup);
 				}
 				else if(index == 53) {
 					ItemStack gapple = shopGUIS.makeItem(Material.GOLDEN_APPLE.name(), ChatColor.GOLD + "Infinite Life", Arrays.asList(ChatColor.GRAY + "Yummy golden apple that never runs out."), false);
-					i.setItem(1, gapple);
+					p.getWorld().dropItemNaturally(p.getLocation(), gapple);
 				}
 				else if(index == 1) {
 					ItemStack lhel = shopGUIS.makeItem(Material.LEATHER_HELMET.name(), ChatColor.WHITE + "Leather Hat", Arrays.asList(ChatColor.GRAY + "A simple leather hat."), true);
-					i.setHelmet(lhel);
+					p.getWorld().dropItemNaturally(p.getLocation(), lhel);
 				}
 				else if(index == 2) {
 					ItemStack lchest = shopGUIS.makeItem(Material.LEATHER_CHESTPLATE.name(), ChatColor.WHITE +"Leather Chestplate", Arrays.asList(ChatColor.GRAY + "A simple leather chestplate."), true);
-					i.setChestplate(lchest);
+					p.getWorld().dropItemNaturally(p.getLocation(), lchest);
 				}
 				else if(index == 3) {
 					ItemStack lpant = shopGUIS.makeItem(Material.LEATHER_LEGGINGS.name(), ChatColor.WHITE +"Leather Leggings", Arrays.asList(ChatColor.GRAY + "Simple leather pants."), true);
-					i.setLeggings(lpant);
+					p.getWorld().dropItemNaturally(p.getLocation(), lpant);
 				}
 				else if(index == 4) {
 					ItemStack lboot = shopGUIS.makeItem(Material.LEATHER_BOOTS.name(), ChatColor.WHITE +"Leather Boots", Arrays.asList(ChatColor.GRAY + "Simple leather shoes."), true);
-					i.setBoots(lboot);
+					p.getWorld().dropItemNaturally(p.getLocation(), lboot);
 				}
 				else if(index == 10) {
 					ItemStack lhel = shopGUIS.makeItem(Material.GOLDEN_HELMET.name(), ChatColor.YELLOW + "Golden Hat", Arrays.asList(ChatColor.GRAY + "Sparkly upgrade from the leather hat."), true);
-					i.setHelmet(lhel);
+					p.getWorld().dropItemNaturally(p.getLocation(), lhel);
 				}
 				else if(index == 11) {
 					ItemStack lchest = shopGUIS.makeItem(Material.GOLDEN_CHESTPLATE.name(), ChatColor.YELLOW + "Gold Chestplate", Arrays.asList(ChatColor.GRAY + "Chestplate made from a whole" , ChatColor.GRAY + "20oz golden nugget."), true);
-					i.setChestplate(lchest);
+					p.getWorld().dropItemNaturally(p.getLocation(), lchest);
 				}
 				else if(index == 12) {
 					ItemStack lpant = shopGUIS.makeItem(Material.GOLDEN_LEGGINGS.name(), ChatColor.YELLOW + "Golden Pants", Arrays.asList(ChatColor.GRAY + "Gold pants that make you look skinny."), true);
-					i.setLeggings(lpant);
+					p.getWorld().dropItemNaturally(p.getLocation(), lpant);
 				}
 				else if(index == 13) {
 					ItemStack lboot = shopGUIS.makeItem(Material.GOLDEN_BOOTS.name(), ChatColor.YELLOW + "Gold Boots", Arrays.asList(ChatColor.GRAY + "Cute little golden shoes."), true);
-					i.setBoots(lboot);
+					p.getWorld().dropItemNaturally(p.getLocation(), lboot);
 				}
 				else if(index == 19) {
 					ItemStack lhel = shopGUIS.makeItem(Material.CHAINMAIL_HELMET.name(), ChatColor.DARK_GRAY + "Chainmail Hat", Arrays.asList(ChatColor.GRAY + "Strangely Efficient, even with", ChatColor.GRAY + "so many holes."), true);
-					i.setHelmet(lhel);
+					p.getWorld().dropItemNaturally(p.getLocation(), lhel);
 				}
 				else if(index == 20) {
 					ItemStack lchest = shopGUIS.makeItem(Material.CHAINMAIL_CHESTPLATE.name(), ChatColor.DARK_GRAY + "Chainmail Chestplate", Arrays.asList(ChatColor.GRAY + "Chainy Chestplate."), true);
-					i.setChestplate(lchest);
+					p.getWorld().dropItemNaturally(p.getLocation(), lchest);
 				}
 				else if(index == 21) {
 					ItemStack lpant = shopGUIS.makeItem(Material.CHAINMAIL_LEGGINGS.name(), ChatColor.DARK_GRAY + "Chainmail Pants", Arrays.asList(ChatColor.GRAY + "Not recommended for sneaking."), true);
-					i.setLeggings(lpant);
+					p.getWorld().dropItemNaturally(p.getLocation(), lpant);
 				}
 				else if(index == 22) {
 					ItemStack lboot = shopGUIS.makeItem(Material.CHAINMAIL_BOOTS.name(), ChatColor.DARK_GRAY + "Chainmail Boots", Arrays.asList(ChatColor.GRAY + "Not water-proof."), true);
-					i.setBoots(lboot);
+					p.getWorld().dropItemNaturally(p.getLocation(), lboot);
 				}
 				else if(index == 28) {
 					ItemStack lhel = shopGUIS.makeItem(Material.IRON_HELMET.name(), ChatColor.GRAY + "Iron Hat", Arrays.asList(ChatColor.GRAY + "Hat made from an iron fence."), true);
-					i.setHelmet(lhel);
+					p.getWorld().dropItemNaturally(p.getLocation(), lhel);
 				}
 				else if(index == 29) {
 					ItemStack lchest = shopGUIS.makeItem(Material.IRON_CHESTPLATE.name(), ChatColor.GRAY + "Iron Chestplate", Arrays.asList(ChatColor.GRAY + "How do you even move in here?"), true);
-					i.setChestplate(lchest);
+					p.getWorld().dropItemNaturally(p.getLocation(), lchest);
 				}
 				else if(index == 30) {
 					ItemStack lpant = shopGUIS.makeItem(Material.IRON_LEGGINGS.name(), ChatColor.GRAY + "Iron Pants", Arrays.asList(ChatColor.GRAY + "Really heavy but oh well."), true);
-					i.setLeggings(lpant);
+					p.getWorld().dropItemNaturally(p.getLocation(), lpant);
 				}
 				else if(index == 31) {
 					ItemStack lboot = shopGUIS.makeItem(Material.IRON_BOOTS.name(), ChatColor.GRAY + "Iron Boots", Arrays.asList(ChatColor.GRAY + "Really waterproof."), true);
-					i.setBoots(lboot);
+					p.getWorld().dropItemNaturally(p.getLocation(), lboot);
 				}
 				else if(index == 37) {
 					ItemStack lhel = shopGUIS.makeItem(Material.DIAMOND_HELMET.name(), ChatColor.AQUA + "Diamond Hat", Arrays.asList(ChatColor.GRAY + "Cute aqua hat for not dying."), true);
-					i.setHelmet(lhel);
+					p.getWorld().dropItemNaturally(p.getLocation(), lhel);
 				}
 				else if(index == 38) {
 					ItemStack lchest = shopGUIS.makeItem(Material.DIAMOND_CHESTPLATE.name(), ChatColor.AQUA + "Diamond Chestplate", Arrays.asList(ChatColor.GRAY + "OoOooOo, sparkly."), true);
-					i.setChestplate(lchest);
+					p.getWorld().dropItemNaturally(p.getLocation(), lchest);
 				}
 				else if(index == 39) {
 					ItemStack lpant = shopGUIS.makeItem(Material.DIAMOND_LEGGINGS.name(), ChatColor.AQUA + "Diamond Pants", Arrays.asList(ChatColor.GRAY + "Best pants in the country."), true);
-					i.setLeggings(lpant);
+					p.getWorld().dropItemNaturally(p.getLocation(), lpant);
 				}
 				else if(index == 40) {
 					ItemStack lboot = shopGUIS.makeItem(Material.DIAMOND_BOOTS.name(), ChatColor.AQUA + "Diamond Boots", Arrays.asList(ChatColor.GRAY + "Also waterproof."), true);
-					i.setBoots(lboot);
+					p.getWorld().dropItemNaturally(p.getLocation(),lboot);
 				}
 				else if(index == 5) {
 					p.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 999999, 0, false, false, false));
@@ -8964,13 +9327,13 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 				}
 				else if(index == 138) {
 					ItemStack lchest = shopGUIS.makeItem(Material.ELYTRA.name(), ChatColor.YELLOW + "Wings of The Nephilim", Arrays.asList(ChatColor.GRAY + "Stolen but useful."), true);
-					i.setChestplate(lchest);
+					p.getWorld().dropItemNaturally(p.getLocation(), lchest);
 				}
 		}
 	
 		//
 		
-		@EventHandler
+		/*@EventHandler
 		public void breakb(BlockBreakEvent e) {
 			if(inSpawnRegion(e.getBlock().getLocation())) {
 				e.setCancelled(true);
@@ -8982,6 +9345,595 @@ public class survivalmain extends JavaPlugin implements Listener, CommandExecuto
 			if(inSpawnRegion(e.getBlock().getLocation())) {
 				e.setCancelled(true);
 			}
+		}*/
+		
+		public boolean notnpc(Entity e) {
+			if(e instanceof Player) {
+				if(Bukkit.getOnlinePlayers().contains(((Player) e))) {
+					return true;
+				}
+			}
+			return false;
 		}
+		
+		 //fast water
+		
+		public void passiveJoin(Player p, List<Integer> abilities) {
+			if(abilities.contains(188)) {
+				if(!playerInWater.containsKey(p)) {
+				playerInWater.put(p, 0.1);
+				}
+			}
+			if(abilities.contains(181)) {
+				if(!torch.containsKey(p)) {
+				torch.put(p, null);
+				}
+			}
+			if(abilities.contains(187)) {
+				if(!darkregen.contains(p)) {
+					darkregen.add(p);
+				}
+			}
+			if(abilities.contains(186)) {
+				if(!darkregenF.contains(p)) {
+					darkregenF.add(p);
+				}
+			}
+			if(abilities.contains(185)) {
+				if(!lightregen.contains(p)) {
+					lightregen.add(p);
+				}
+			}
+			if(abilities.contains(184)) {
+				if(!lightregenF.contains(p)) {
+					lightregenF.add(p);
+				}
+			}
+			if(abilities.contains(183)) {
+				if(!waterregen.contains(p)) {
+					waterregen.add(p);
+				}
+			}
+			if(abilities.contains(182)) {
+				if(!waterregenF.contains(p)) {
+					waterregenF.add(p);
+				}
+			}
+		}
+		
+		public void passiveEnable(Player p, int ability) {
+			if(ability == 188) {
+				if(!playerInWater.containsKey(p)) {
+				playerInWater.put(p, 0.1);
+				}
+			}
+			if(ability == 181) {
+				if(!torch.containsKey(p)) {
+				torch.put(p, null);
+				}
+			}
+			if(ability == 187) {
+				if(!darkregen.contains(p)) {
+					darkregen.add(p);
+				}
+			}
+			if(ability == 186) {
+				if(!darkregenF.contains(p)) {
+					darkregenF.add(p);
+				}
+			}
+			if(ability == 185) {
+				if(!lightregen.contains(p)) {
+					lightregen.add(p);
+				}
+			}
+			if(ability == 184) {
+				if(!lightregenF.contains(p)) {
+					lightregenF.add(p);
+				}
+			}
+			if(ability == 183) {
+				if(!waterregen.contains(p)) {
+					waterregen.add(p);
+				}
+			}
+			if(ability == 182) {
+				if(!waterregenF.contains(p)) {
+					waterregenF.add(p);
+				}
+			}
+		}
+		
+		public void passiveDisable(Player p, int ability) {
+			if(ability == 188) {
+				if(playerInWater.containsKey(p)) {
+				playerInWater.remove(p);
+				}
+			}
+			if(ability == 181) {
+				if(torch.containsKey(p)) {
+				torch.remove(p);
+				}
+			}
+			if(ability == 187) {
+				if(darkregen.contains(p)) {
+					darkregen.remove(p);
+				}
+			}
+			if(ability == 186) {
+				if(darkregenF.contains(p)) {
+					darkregenF.remove(p);
+				}
+			}
+			if(ability == 185) {
+				if(lightregen.contains(p)) {
+					lightregen.remove(p);
+				}
+			}
+			if(ability == 184) {
+				if(lightregenF.contains(p)) {
+					lightregenF.remove(p);
+				}
+			}
+			if(ability == 183) {
+				if(waterregen.contains(p)) {
+					waterregen.remove(p);
+				}
+			}
+			if(ability == 182) {
+				if(waterregenF.contains(p)) {
+					waterregenF.remove(p);
+				}
+			}
+		}
+	
+		HashMap<Player, Double> playerInWater = new HashMap<Player, Double>();
+	
+		public void increaseWaterVelocity() {
+		HashMap<Player, Double> playerInWaterCopy = new HashMap<Player, Double>(playerInWater);
+		for(Player p : playerInWaterCopy.keySet()) {
+			boolean didSomething = false;
+			if(canHuman(p)) {
+				if(!shopGUIS.enabled.get(p.getName()).contains(188)) {
+					playerInWater.remove(p);
+				}
+				else{
+				boolean water = false;
+				boolean sneaking = p.isSneaking();
+				Block b = p.getLocation().getBlock();
+				boolean isWater = false;
+				if(b.getBlockData() instanceof Waterlogged) {
+					isWater = ((Waterlogged) b.getBlockData()).isWaterlogged();
+				}
+				if(b.getType() == Material.WATER || b.getType() == Material.KELP_PLANT || b.getType() == Material.SEAGRASS || b.getType() == Material.TALL_SEAGRASS || isWater) {
+					water = true;
+				}
+				if(sneaking && water) {
+					double mult = playerInWaterCopy.get(p);
+					if(mult < 1.35) {
+						mult += .015;
+					}
+					Vector v = p.getLocation().getDirection().normalize().multiply(mult);
+					p.setVelocity(v);
+					playerInWater.put(p, mult);
+				}
+				else if(water || sneaking) {
+					if(!p.isGliding()) {
+					double mult = playerInWaterCopy.get(p) - .03;
+					if(mult <= 0.1) {
+						playerInWater.put(p, 0.1);
+					}
+					else {
+					playerInWater.put(p, mult);
+					}
+					}
+					else {
+						double mult = playerInWaterCopy.get(p) - .005;
+						if(mult <= 0.1) {
+							playerInWater.put(p, 0.1);
+						}
+						else {
+						playerInWater.put(p, mult);
+						}
+					}
+				}
+				}
+			}
+			else{
+				playerInWater.remove(p);
+			}
+		}
+	}
+	
+		@EventHandler
+		public void onSneakInWater(PlayerToggleSneakEvent e) {
+		Player p = e.getPlayer();
+		if(!p.isSneaking()) {
+				Location l = p.getLocation().clone();
+				if(l.getBlock().getType() == Material.WATER) {
+					if(!playerInWater.containsKey(p)) {
+					playerInWater.put(p, 0.1);
+					}
+				}
+			}
+		}
+	
+	//mining ability
+	
+	@EventHandler
+	public void mineStone(BlockBreakEvent e) {
+		Player p = e.getPlayer();
+		if(shopGUIS.enabled.get(e.getPlayer().getName()).contains(172)) {
+		ItemStack hand = p.getInventory().getItemInMainHand();
+		if(hand != null) {
+			if(hand.getType().name().toLowerCase().contains("pickaxe")) {
+			if(e.getBlock() != null) {
+				if(isStony(e.getBlock().getType())) {
+					if(!e.isCancelled()) {
+					BlockFace[] faces = {BlockFace.UP, BlockFace.DOWN, BlockFace.EAST, BlockFace.WEST, BlockFace.NORTH, BlockFace.SOUTH};
+					for(BlockFace bf : faces) {
+						if(isStony(e.getBlock().getRelative(bf).getType())) {
+							e.getBlock().getRelative(bf).breakNaturally(hand);
+						}
+					}
+				}
+				}
+			}
+			}
+		}
+		}
+		if(shopGUIS.enabled.get(e.getPlayer().getName()).contains(171)) {
+			ItemStack hand = p.getInventory().getItemInMainHand();
+			if(hand != null) {
+				if(hand.getType().name().toLowerCase().contains("pickaxe")) {
+				if(e.getBlock() != null) {
+					if(e.getBlock().getType().name().toLowerCase().contains("ore")) {
+						Material m = e.getBlock().getType();
+						if(m == Material.IRON_ORE || m == Material.GOLD_ORE) {
+							e.setCancelled(true);
+							e.getBlock().setType(Material.AIR);
+							e.getBlock().getWorld().dropItem(e.getBlock().getLocation().add(0.5, 0, 0.5), new ItemStack(Material.getMaterial(m.name().substring(0, 5)+"INGOT")));
+						}
+					}
+				}
+				}
+			}
+		}
+	}
+	
+	//axe ability
+	
+	@EventHandler
+	public void mineWood(BlockBreakEvent e) {
+		Player p = e.getPlayer();
+		if(shopGUIS.enabled.get(e.getPlayer().getName()).contains(170)) {
+		ItemStack hand = p.getInventory().getItemInMainHand();
+		if(hand != null) {
+			if(hand.getType().name().toLowerCase().contains("axe")) {
+			if(e.getBlock() != null) {
+				if(e.getBlock().getType().name().toLowerCase().contains("log") || e.getBlock().getType().name().toLowerCase().contains("leave")) {
+					if(!e.isCancelled()) {
+					BlockFace[] faces = {BlockFace.UP, BlockFace.DOWN, BlockFace.EAST, BlockFace.WEST, BlockFace.NORTH, BlockFace.SOUTH};
+					for(BlockFace bf : faces) {
+						if(e.getBlock().getRelative(bf).getType().name().toLowerCase().contains("leave")||e.getBlock().getRelative(bf).getType().name().toLowerCase().contains("log")) {
+							e.getBlock().getRelative(bf).breakNaturally(hand);
+						}
+					}
+				}
+				}
+			}
+			}
+		}
+		}
+	}
+	
+	//Situational Regen
+	
+	List<Player> darkregen = new ArrayList<Player>();
+	List<Player> lightregen = new ArrayList<Player>();
+	List<Player> waterregen = new ArrayList<Player>();
+	
+	List<Player> darkregenF = new ArrayList<Player>();
+	List<Player> lightregenF = new ArrayList<Player>();
+	List<Player> waterregenF = new ArrayList<Player>();
+	
+	public void regenPlayers() {
+		List<Player> darkregenC = new ArrayList<Player>(darkregen);
+		List<Player> lightregenC = new ArrayList<Player>(lightregen);
+		List<Player> waterregenC = new ArrayList<Player>(waterregen);
+		for(Player p : darkregenC) {
+			if(canHuman(p)) {
+				if(p.getHealth() < p.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue()) {
+				if(p.getLocation().getBlock().getLightLevel() <= 4) {
+					int light = p.getLocation().getBlock().getLightLevel()+1;
+					double ammount = ((light * 2) / (light * light)) * 2;
+					healPlayer(p, ammount);
+					p.getWorld().spawnParticle(Particle.SQUID_INK, p.getLocation().add(0, 1, 0), 2, 0.35, 0.5, 0.35, 0.001);
+				}
+				}
+			}
+			else {
+				darkregen.remove(p);
+			}
+		}
+		for(Player p : lightregenC) {
+			if(canHuman(p)) {
+				if(p.getHealth() < p.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue()) {
+				if(p.getLocation().getBlock().getLightLevel() >= 12) {
+					int light = p.getLocation().getBlock().getLightLevel();
+					double ammount = 16 - light;
+					healPlayer(p, ammount);
+					p.getWorld().spawnParticle(Particle.FIREWORKS_SPARK, p.getLocation().add(0, 1, 0), 2, 0.35, 0.5, 0.35, 0.001);
+				}
+				}
+			}
+			else {
+				lightregen.remove(p);
+			}
+		}
+		for(Player p : waterregenC) {
+			if(canHuman(p)) {
+				if(p.getHealth() < p.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue()) {
+				Block b = p.getLocation().getBlock();
+				boolean isWater = false;
+				if(b.getBlockData() instanceof Waterlogged) {
+					isWater = ((Waterlogged) b.getBlockData()).isWaterlogged();
+				}
+				if(b.getType() == Material.WATER || b.getType() == Material.KELP_PLANT || b.getType() == Material.SEAGRASS || b.getType() == Material.TALL_SEAGRASS || isWater) {
+					isWater = true;
+				}
+				if(isWater) {
+					healPlayer(p, 2);
+					p.playSound(p.getLocation(), Sound.ITEM_BOTTLE_FILL, 1, (float) 1.1);
+				}
+				}
+			}
+			else {
+				waterregen.remove(p);
+			}
+		}
+		List<Player> darkregenCF = new ArrayList<Player>(darkregenF);
+		List<Player> lightregenCF = new ArrayList<Player>(lightregenF);
+		List<Player> waterregenCF = new ArrayList<Player>(waterregenF);
+		for(Player p : darkregenCF) {
+			if(canHuman(p)) {
+				if(p.getFoodLevel() < 20) {
+				if(p.getLocation().getBlock().getLightLevel() <= 4) {
+					int light = p.getLocation().getBlock().getLightLevel()+1;
+					double ammount = ((light * 2) / (light * light)) * 2;
+					feedPlayer(p, ammount);
+					p.getWorld().spawnParticle(Particle.SQUID_INK, p.getLocation().add(0, 1, 0), 2, 0.35, 0.5, 0.35, 0.001);
+					p.playSound(p.getLocation(), Sound.ENTITY_GENERIC_EAT, 1, (float) 1.1);
+				}
+				}
+			}
+			else {
+				darkregenF.remove(p);
+			}
+		}
+		for(Player p : lightregenCF) {
+			if(canHuman(p)) {
+				if(p.getFoodLevel() < 20) {
+				if(p.getLocation().getBlock().getLightLevel() >= 12) {
+					int light = p.getLocation().getBlock().getLightLevel();
+					double ammount = 16 - light;
+					feedPlayer(p, ammount);
+					p.getWorld().spawnParticle(Particle.FIREWORKS_SPARK, p.getLocation().add(0, 1, 0), 2, 0.35, 0.5, 0.35, 0.001);
+					p.playSound(p.getLocation(), Sound.ENTITY_GENERIC_EAT, 1, (float) 1.1);
+				}
+				}
+			}
+			else {
+				lightregenF.remove(p);
+			}
+		}
+		for(Player p : waterregenCF) {
+			if(canHuman(p)) {
+				if(p.getFoodLevel() < 20) {
+				Block b = p.getLocation().getBlock();
+				boolean isWater = false;
+				if(b.getBlockData() instanceof Waterlogged) {
+					isWater = ((Waterlogged) b.getBlockData()).isWaterlogged();
+				}
+				if(b.getType() == Material.WATER || b.getType() == Material.KELP_PLANT || b.getType() == Material.SEAGRASS || b.getType() == Material.TALL_SEAGRASS || isWater) {
+					isWater = true;
+				}
+				if(isWater) {
+					feedPlayer(p, 2);
+					p.playSound(p.getLocation(), Sound.ENTITY_GENERIC_DRINK, 1, (float) 1.1);
+				}
+				}
+			}
+			else {
+				waterregenF.remove(p);
+			}
+		}
+	}
+
+	//Passive Lights
+	
+	HashMap<Player, Block> torch = new HashMap<Player, Block>();
+	
+	public void makeFireLine(Player p, Location to, Location from) {
+		Location start = to.clone().getBlock().getLocation().add(0.5, 0.5, 0.5);
+		Location end = from.clone().getBlock().getLocation().add(0.5, 0.5, 0.5);
+		double step = 0.1D;
+
+		Vector line = end.toVector().subtract(start.toVector());
+		if(line.length() > 8) {
+			p.spawnParticle(Particle.FLAME, start.clone(), 20, .2, .2, .2, 0.01);
+			return;
+		}
+		for (double d = 0; d < line.length()/4.0; d += step) {
+			final double dd = d;
+			p.spawnParticle(Particle.FLAME, start.clone().add(line.clone().multiply(dd)), 3, 0, 0, 0, 0.001);
+		}
+	}
+
+	@EventHandler
+	public void onPlayerLightMove(PlayerMoveEvent e) {
+		Player p = e.getPlayer();
+			if(torch.containsKey(p)) {
+			Location from = e.getTo().clone();
+			Location to = e.getFrom().clone();
+			if(differentBlock(to, from)) {
+				boolean doTorch = false;
+				if(torch.get(p) == null) {
+					doTorch = true;
+				}
+				else {
+					Location cloneTo = to.clone().add(0, 2, 0);
+					if(cloneTo.distance(torch.get(p).getLocation())>=5) {
+						doTorch = true;
+					}
+				}
+				if(doTorch) {
+				if(torch.get(p) != null) {
+					p.sendBlockChange(torch.get(p).getLocation(), torch.get(p).getBlockData());
+				}
+				if(to.getBlock().getLightLevel()<8 || (isNight(to.getWorld())&&to.getBlock().getLightFromSky() > 7)) {
+				to.add(0, 2, 0);
+				if(isAir(to.getBlock().getType())) {
+					if(torch.get(p)!=null) {
+						makeFireLine(p, to, torch.get(p).getLocation());
+					}
+					else {
+						p.spawnParticle(Particle.FLAME, to.clone().getBlock().getLocation().add(0.5, 0.5, 0.5), 20, .2, .2, .2, 0.01);
+					}
+					torch.put(p, to.getBlock());
+					p.sendBlockChange(to.getBlock().getLocation(), Material.LANTERN.createBlockData());
+				}
+				}
+				else {
+					if(torch.get(p) != null) {
+						torch.put(p, null);
+					}
+				}
+				}
+			}
+		}
+	}
+
+	//Grappling Hook
+	
+	public void pushToGrapple(int iteration, Location target, Player p, int maxIteration) {
+		if(p.isSneaking() || maxIteration >= 500 || iteration >= maxIteration || target.getWorld().getNearbyEntities(target, .5, .5, .5).contains(p)) {
+			return;
+		}
+		else {
+			Vector v = target.toVector().subtract(p.getLocation().toVector()).normalize();
+			p.setVelocity(v);
+			Bukkit.getScheduler().runTaskLater(this, () -> pushToGrapple(iteration + 1, target, p, maxIteration), (long) (1));
+		}
+	}
+	
+	@EventHandler
+	public void grapplingHookStuck(PlayerFishEvent e) {
+		Player p = e.getPlayer();
+		if(!shopGUIS.enabled.containsKey(p.getName())) {
+			return;
+		}
+		if(shopGUIS.enabled.get(e.getPlayer().getName()).contains(169)) {
+			if(e.getState() == State.IN_GROUND) {
+				pushToGrapple(0, e.getHook().getLocation(), p, (int) (p.getLocation().distance(e.getHook().getLocation())*5));
+			}
+		}
+	}
+	
+	//Dimensional Doors
+
+	HashMap<Player, Location> doorsaves = new HashMap<Player, Location>();
+	HashMap<Block, Integer> doors = new HashMap<Block, Integer>();
+	HashMap<Block, Player> doorsend = new HashMap<Block, Player>();
+	
+	@EventHandler
+	public void playerSavesLocation(PlayerInteractEvent e) {
+		Player p = e.getPlayer();
+		if(!shopGUIS.enabled.containsKey(p.getName())) {
+			return;
+		}
+		if(shopGUIS.enabled.get(e.getPlayer().getName()).contains(168)) {
+			if(p.isSneaking()&&(e.getAction() == Action.RIGHT_CLICK_AIR || e.getAction() == Action.RIGHT_CLICK_BLOCK)) {
+				p.getWorld().playSound(p.getLocation(), Sound.ITEM_FIRECHARGE_USE, 1, 1);
+				float radius = 1.0f;
+				Location location = p.getLocation().clone().add(0, 1, 0);
+				for(float angle = 0f; angle < 6.4; angle += 0.1) {
+				double x = (radius * Math.sin(angle));
+				double z = (radius * Math.cos(angle));
+				location.getWorld().spawnParticle(Particle.SMOKE_NORMAL, location.getX()+x, location.getY(), location.getZ()+z, 1, 0, 0, 0, 0.0001);
+				}
+				p.getWorld().spawnParticle(Particle.SQUID_INK, p.getLocation().add(0, 1, 0), 10, 0.2, 0.2, 0.2, 0.0001);
+				doorsaves.put(p, p.getLocation().clone().add(0, 0.05, 0));
+			}
+		}
+	}
+	
+	@EventHandler
+	public void playerReachesDoor(PlayerMoveEvent e) {
+		Player p = e.getPlayer();
+		if(!notnpc(p)) {
+			return;
+		}
+		if(p.isSneaking()) {
+			if(!shopGUIS.enabled.containsKey(p.getName())) {
+				return;
+			}
+			if(shopGUIS.enabled.get(e.getPlayer().getName()).contains(168)) {
+				if(doorsaves.containsKey(p)) {
+					if(p.getLocation().getBlock().getType().name().toLowerCase().contains("door")) {
+						doors.put(p.getLocation().getBlock(), 0);
+						doorsend.put(p.getLocation().getBlock(), p);
+						addPotionEffectBetter(p, PotionEffectType.INVISIBILITY, 25, 1, false, false, false);
+						addPotionEffectBetter(p, PotionEffectType.BLINDNESS, 25, 1, false, false, false);
+						p.teleport(doorsaves.get(p));
+					}
+				}
+			}
+		}
+	}
+	
+	public void activateDoor() {
+		List<Block> doorsCopy = new ArrayList<Block>(doors.keySet());
+		for(Block b : doorsCopy) {
+			if(b != null) {
+				int time = doors.get(b) + 1;
+				if(time >= 200 || (!(b.getType().name().toLowerCase().contains("door")))) {
+					doors.remove(b);
+					doorsend.remove(b);
+				}
+				else {
+					if(!((Openable) b.getBlockData()).isOpen()) {
+					for(Entity e : b.getWorld().getNearbyEntities(b.getLocation().add(0.5, 0, 0.5), .1, .1, .1)) {
+						if(e instanceof LivingEntity) {
+							addPotionEffectBetter(((LivingEntity) e), PotionEffectType.INVISIBILITY, 25, 1, false, false, false);
+							addPotionEffectBetter(((LivingEntity) e), PotionEffectType.BLINDNESS, 25, 1, false, false, false);
+						}
+						e.teleport(doorsaves.get(doorsend.get(b)));
+					}
+					}
+					else {
+						BlockFace facing = ((Directional) b.getBlockData()).getFacing();
+						if(facing == BlockFace.WEST) {
+							b.getWorld().spawnParticle(Particle.CAMPFIRE_COSY_SMOKE, b.getLocation().add(0.7, .9, 0.5), 4, 0, 0.45, 0.13, 0.0001);
+						}
+						else if(facing == BlockFace.EAST) {
+							b.getWorld().spawnParticle(Particle.CAMPFIRE_COSY_SMOKE, b.getLocation().add(0.3, .9, 0.5), 4, 0, 0.45, 0.13, 0.0001);
+						}
+						if(facing == BlockFace.SOUTH) {
+							b.getWorld().spawnParticle(Particle.CAMPFIRE_COSY_SMOKE, b.getLocation().add(0.5, .9, 0.3), 4, 0.13, 0.45, 0, 0.0001);
+						}
+						if(facing == BlockFace.NORTH) {
+							b.getWorld().spawnParticle(Particle.CAMPFIRE_COSY_SMOKE, b.getLocation().add(0.5, .9, 0.7), 4, 0.13, 0.45, 0, 0.0001);
+						}
+					}
+					doors.put(b, time);
+				}
+			}
+			else {
+				doors.remove(b);
+				doorsend.remove(b);
+			}
+		}
+	}
 		
 }

@@ -1,8 +1,9 @@
 main: survivalpackage.survivalmain
-name: SE
+name: DangerousSurvival
 version: 1.0
 author: Evil_Lootly
 description: Makes survival more engaging.
+depend: [LibsDisguises]
 api-version: 1.13
 
 commands:
